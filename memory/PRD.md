@@ -81,9 +81,16 @@
 - Selección de canal (WA/Email/Ambos)
 - Mock n8n con delay
 
-### Fase 7: Chatbot ✅
-- Iframe Onyx Cloud
-- Acciones subir/descargar docs
+### Fase 7: Chatbot NATIVO ✅ (Actualizado)
+- **Chat Nativo RAG** (NO iframe)
+- API proxy: `/api/onyx-chat` → Onyx Cloud
+- Mock fallback Santa Gadea (fiestas 14-17 agosto)
+- Markdown rendering (react-markdown)
+- MessageBubbles user/assistant
+- Quick suggestions
+- FileUpload (mock)
+- ChatDock flotante global (oculto en /chatbot)
+- Tabs: Chat Nativo / Iframe Onyx
 
 ### Fase 8: Configuración ✅
 - Info del tenant
