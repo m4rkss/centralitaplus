@@ -12,11 +12,19 @@
 | Capa | Tecnología |
 |------|------------|
 | Frontend | React 19, Tailwind CSS, Shadcn/ui |
-| State Management | Zustand + localStorage |
+| State Management | Zustand (auth + data stores) |
 | Gráficos | Recharts |
-| Backend | FastAPI (preparado para producción) |
-| Database | MongoDB (producción) / localStorage (demo) |
+| Backend | FastAPI + JWT Auth |
+| Database | MongoDB |
+| Auth | JWT (HS256, 24h expiration) |
+| Password | bcrypt (passlib) |
 | Integraciones | Vapi, Retell, Onyx Cloud, n8n |
+
+### Multi-Tenant Architecture
+- **Tenant Detection**: Subdominio → tenant_id (santagadea.centralitaia.com → santa-gadea)
+- **Data Isolation**: ALL queries include WHERE tenant_id = session.tenant_id
+- **JWT Payload**: {sub: userId, tenant_id, rol, exp, iat}
+- **Protected Routes**: Redirect to /login if not authenticated
 
 ### Estructura de Carpetas
 ```
@@ -47,6 +55,14 @@
 - [x] Multi-tenant con detección de subdominio
 
 ## Implementado (04/01/2026)
+
+### Autenticación Multi-Tenant ✅ (Nuevo)
+- **Login Page**: Detección automática de tenant desde subdominio
+- **JWT Auth**: HS256, 24h expiration, payload con tenant_id
+- **Seed Data**: admin@santa-gadea.es/pass123, secretaria@santa-gadea.es/pass123
+- **Protected Routes**: Todas las rutas requieren autenticación
+- **Tenant Isolation**: Todos los datos filtrados por tenant_id
+- **User Header**: Nombre de usuario + rol + logout
 
 ### Fase 1: Foundation ✅
 - Schemas Zod para tipos
