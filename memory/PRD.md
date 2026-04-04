@@ -81,16 +81,21 @@
 - Selección de canal (WA/Email/Ambos)
 - Mock n8n con delay
 
-### Fase 7: Chatbot NATIVO ✅ (Actualizado)
+### Fase 7: Chatbot NATIVO ✅ (Actualizado - 100% Responsive)
 - **Chat Nativo RAG** (NO iframe)
 - API proxy: `/api/onyx-chat` → Onyx Cloud
 - Mock fallback Santa Gadea (fiestas 14-17 agosto)
 - Markdown rendering (react-markdown)
-- MessageBubbles user/assistant
+- MessageBubbles user/assistant con avatars
 - Quick suggestions
 - FileUpload (mock)
-- ChatDock flotante global (oculto en /chatbot)
+- **Responsive Design**:
+  - Mobile (< 640px): Fullscreen chat, hamburger menu
+  - Tablet (768px): Adaptive layout
+  - Desktop (1024px+): Floating 400x600px window
+- ChatDock global (oculto en /chatbot)
 - Tabs: Chat Nativo / Iframe Onyx
+- UX: Typing dots, clear chat, minimize/maximize
 
 ### Fase 8: Configuración ✅
 - Info del tenant
