@@ -9,17 +9,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { cn } from '@/lib/utils';
 
 const pageTitles = {
   '/': 'Dashboard',
   '/llamadas': 'Llamadas',
   '/incidencias': 'Incidencias',
   '/comunicados': 'Comunicados',
-  '/chatbot': 'Chatbot Asistente',
+  '/chatbot': 'Chatbot',
   '/configuracion': 'Configuración'
 };
 
-export function Header() {
+export function Header({ isMobile = false }) {
   const { currentTenant } = useTenantStore();
   const location = useLocation();
   const pageTitle = pageTitles[location.pathname] || 'Dashboard';
@@ -27,26 +28,29 @@ export function Header() {
   return (
     <header 
       data-testid="header"
-      className="h-16 bg-slate-900/50 backdrop-blur-sm border-b border-slate-800 flex items-center justify-between px-6"
+      className={cn(
+        "h-14 sm:h-16 bg-slate-900/50 backdrop-blur-sm border-b border-slate-800 flex items-center justify-between px-4 sm:px-6",
+        isMobile && "pl-14" // Space for menu button on mobile
+      )}
     >
       {/* Título de página */}
-      <div>
-        <h2 className="text-xl font-semibold text-white">{pageTitle}</h2>
-        <p className="text-xs text-slate-400">
+      <div className="min-w-0">
+        <h2 className="text-base sm:text-xl font-semibold text-white truncate">{pageTitle}</h2>
+        <p className="text-[10px] sm:text-xs text-slate-400 truncate hidden xs:block">
           {currentTenant?.nombre || 'Cargando...'}
         </p>
       </div>
 
       {/* Acciones */}
-      <div className="flex items-center gap-3">
-        {/* Búsqueda */}
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Búsqueda - hidden on mobile */}
         <button 
           data-testid="search-btn"
-          className="flex items-center gap-2 px-3 py-2 bg-slate-800 rounded-lg text-slate-400 text-sm hover:bg-slate-700 transition-colors"
+          className="hidden sm:flex items-center gap-2 px-3 py-2 bg-slate-800 rounded-lg text-slate-400 text-sm hover:bg-slate-700 transition-colors"
         >
           <Search className="w-4 h-4" />
-          <span className="hidden sm:inline">Buscar...</span>
-          <kbd className="hidden md:inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-700 rounded text-xs text-slate-500">
+          <span className="hidden lg:inline">Buscar...</span>
+          <kbd className="hidden xl:inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-700 rounded text-xs text-slate-500">
             ⌘K
           </kbd>
         </button>
@@ -56,7 +60,7 @@ export function Header() {
           data-testid="notifications-btn"
           className="relative p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
         >
-          <Bell className="w-5 h-5" />
+          <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
           <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
         </button>
 
@@ -65,13 +69,13 @@ export function Header() {
           <DropdownMenuTrigger asChild>
             <button 
               data-testid="user-menu-btn"
-              className="flex items-center gap-2 p-1.5 pr-3 bg-slate-800 rounded-lg hover:bg-slate-700 transition-colors"
+              className="flex items-center gap-1.5 sm:gap-2 p-1 sm:p-1.5 sm:pr-3 bg-slate-800 rounded-lg hover:bg-slate-700 transition-colors"
             >
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-                <User className="w-4 h-4 text-white" />
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
               </div>
               <span className="text-sm text-white hidden sm:inline">Admin</span>
-              <ChevronDown className="w-4 h-4 text-slate-400" />
+              <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 hidden sm:block" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56 bg-slate-800 border-slate-700">
