@@ -1,15 +1,34 @@
 import "@/App.css";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { Layout } from "@/components/layout";
-import { Dashboard, Llamadas, Incidencias, Comunicados, Chatbot, Configuracion } from "@/pages";
+import { ProtectedRoute } from "@/components/auth";
 import { ChatDock } from "@/components/chatbot";
 import { Toaster } from "sonner";
+import { lazy, Suspense } from 'react';
+import { Loader2 } from 'lucide-react';
 
-// Wrapper to conditionally show ChatDock
+// Lazy load pages
+const Login = lazy(() => import("@/pages/Login"));
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const Llamadas = lazy(() => import("@/pages/Llamadas"));
+const Incidencias = lazy(() => import("@/pages/Incidencias"));
+const Comunicados = lazy(() => import("@/pages/Comunicados"));
+const Chatbot = lazy(() => import("@/pages/Chatbot"));
+const Configuracion = lazy(() => import("@/pages/Configuracion"));
+
+// Loading component
+function PageLoader() {
+  return (
+    <div className="min-h-[50vh] flex items-center justify-center">
+      <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+    </div>
+  );
+}
+
+// ChatDock wrapper - hide on login and chatbot pages
 function ChatDockWrapper() {
   const location = useLocation();
-  // Hide ChatDock on the chatbot page to avoid overlap
-  if (location.pathname === '/chatbot') return null;
+  if (location.pathname === '/login' || location.pathname === '/chatbot') return null;
   return <ChatDock />;
 }
 
@@ -17,19 +36,32 @@ function App() {
   return (
     <div className="App">
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="llamadas" element={<Llamadas />} />
-            <Route path="incidencias" element={<Incidencias />} />
-            <Route path="comunicados" element={<Comunicados />} />
-            <Route path="chatbot" element={<Chatbot />} />
-            <Route path="configuracion" element={<Configuracion />} />
-          </Route>
-        </Routes>
-        
-        {/* Global Chat Dock - hidden on chatbot page */}
-        <ChatDockWrapper />
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            {/* Public routes */}
+            <Route path="/login" element={<Login />} />
+            
+            {/* Protected routes */}
+            <Route path="/" element={
+              <ProtectedRoute>
+                <Layout />
+              </ProtectedRoute>
+            }>
+              <Route index element={<Dashboard />} />
+              <Route path="llamadas" element={<Llamadas />} />
+              <Route path="incidencias" element={<Incidencias />} />
+              <Route path="comunicados" element={<Comunicados />} />
+              <Route path="chatbot" element={<Chatbot />} />
+              <Route path="configuracion" element={<Configuracion />} />
+            </Route>
+            
+            {/* Catch all - redirect to login */}
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+          
+          {/* Global Chat Dock */}
+          <ChatDockWrapper />
+        </Suspense>
       </BrowserRouter>
       <Toaster 
         position="top-right" 

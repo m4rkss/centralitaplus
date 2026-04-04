@@ -1,8 +1,7 @@
+import { useEffect, useState } from 'react';
 import { Phone, AlertTriangle, Send, CheckCircle } from 'lucide-react';
 import { KPICard, CallsChart, RecentActivity, QuickActions } from '@/components/dashboard';
-import { useTenantStore, useDataStore } from '@/stores/useTenantStore';
-import { LLAMADAS_MOCK, INCIDENCIAS_MOCK, COMUNICADOS_MOCK } from '@/data/mockSantaGadea';
-import { useState, useMemo } from 'react';
+import { useTenantStore, useAuthStore, useDataStore } from '@/stores/useTenantStore';
 import {
   Dialog,
   DialogContent,
@@ -14,76 +13,35 @@ import { formatDateTime, formatDuration } from '@/lib/utils';
 
 export default function Dashboard() {
   const { subdomain } = useTenantStore();
-  const { getLlamadas, getIncidencias, getComunicados } = useDataStore();
+  const { isAuthenticated } = useAuthStore();
+  const { 
+    llamadas, incidencias, comunicados, kpis, chartData,
+    fetchLlamadas, fetchIncidencias, fetchComunicados, fetchKPIs, fetchChartData 
+  } = useDataStore();
   const navigate = useNavigate();
   
   const [kpiModal, setKpiModal] = useState({ open: false, type: null });
-  
-  // Usar datos del store o fallback a mock
-  const llamadas = getLlamadas(subdomain).length > 0 ? getLlamadas(subdomain) : (LLAMADAS_MOCK[subdomain] || []);
-  const incidencias = getIncidencias(subdomain).length > 0 ? getIncidencias(subdomain) : (INCIDENCIAS_MOCK[subdomain] || []);
-  const comunicados = getComunicados(subdomain).length > 0 ? getComunicados(subdomain) : (COMUNICADOS_MOCK[subdomain] || []);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Calcular KPIs dinámicamente
-  const kpis = useMemo(() => {
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    
-    const hace7Dias = new Date(hoy);
-    hace7Dias.setDate(hace7Dias.getDate() - 7);
-
-    const llamadasHoy = llamadas.filter(l => new Date(l.fecha) >= hoy).length;
-    const llamadasSemana = llamadas.filter(l => new Date(l.fecha) >= hace7Dias).length;
-    const incidenciasAbiertas = incidencias.filter(i => i.estado !== 'cerrada').length;
-    const incidenciasCerradasSemana = incidencias.filter(i => 
-      i.closed_at && new Date(i.closed_at) >= hace7Dias
-    ).length;
-    const comunicadosEnviadosSemana = comunicados.filter(c => 
-      c.enviado_at && new Date(c.enviado_at) >= hace7Dias
-    ).length;
-
-    return {
-      llamadas_hoy: llamadasHoy,
-      llamadas_semana: llamadasSemana,
-      incidencias_abiertas: incidenciasAbiertas,
-      incidencias_cerradas_semana: incidenciasCerradasSemana,
-      comunicados_enviados_semana: comunicadosEnviadosSemana,
-      satisfaccion_ia: 98
-    };
-  }, [llamadas, incidencias, comunicados]);
-
-  // Calcular datos del gráfico
-  const chartData = useMemo(() => {
-    const dias = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-    const hoy = new Date();
-    
-    const datosGrafico = [];
-    
-    for (let i = 6; i >= 0; i--) {
-      const fecha = new Date(hoy);
-      fecha.setDate(fecha.getDate() - i);
-      fecha.setHours(0, 0, 0, 0);
-      
-      const siguienteDia = new Date(fecha);
-      siguienteDia.setDate(siguienteDia.getDate() + 1);
-      
-      const llamadasDia = llamadas.filter(l => {
-        const fechaLlamada = new Date(l.fecha);
-        return fechaLlamada >= fecha && fechaLlamada < siguienteDia;
-      });
-      
-      datosGrafico.push({
-        dia: dias[fecha.getDay()],
-        fecha: fecha.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }),
-        llamadas: llamadasDia.length,
-        vapi: llamadasDia.filter(l => l.proveedor === 'vapi').length,
-        retell: llamadasDia.filter(l => l.proveedor === 'retell').length
-      });
+  // Fetch data on mount
+  useEffect(() => {
+    if (isAuthenticated) {
+      const loadData = async () => {
+        setIsLoading(true);
+        await Promise.all([
+          fetchKPIs(),
+          fetchChartData(),
+          fetchLlamadas(),
+          fetchIncidencias(),
+          fetchComunicados()
+        ]);
+        setIsLoading(false);
+      };
+      loadData();
     }
-    
-    return datosGrafico;
-  }, [llamadas]);
+  }, [isAuthenticated, fetchKPIs, fetchChartData, fetchLlamadas, fetchIncidencias, fetchComunicados]);
 
+  // Filter data for modals
   const llamadasHoy = llamadas.filter(l => {
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
@@ -96,6 +54,16 @@ export default function Dashboard() {
     setKpiModal({ open: true, type });
   };
 
+  // Default KPIs if not loaded
+  const displayKPIs = kpis || {
+    llamadas_hoy: llamadasHoy.length,
+    llamadas_semana: llamadas.length,
+    incidencias_abiertas: incidenciasAbiertas.length,
+    incidencias_cerradas_semana: 0,
+    comunicados_enviados_semana: comunicados.filter(c => c.estado === 'enviado').length,
+    satisfaccion_ia: 98
+  };
+
   return (
     <div data-testid="dashboard-page" className="space-y-6">
       {/* KPI Cards */}
@@ -103,8 +71,8 @@ export default function Dashboard() {
         <KPICard
           testId="kpi-llamadas-hoy"
           title="Llamadas Hoy"
-          value={kpis.llamadas_hoy}
-          subtitle={`${kpis.llamadas_semana} esta semana`}
+          value={displayKPIs.llamadas_hoy}
+          subtitle={`${displayKPIs.llamadas_semana} esta semana`}
           icon={Phone}
           color="blue"
           trend="up"
@@ -114,18 +82,18 @@ export default function Dashboard() {
         <KPICard
           testId="kpi-incidencias"
           title="Incidencias Abiertas"
-          value={kpis.incidencias_abiertas}
-          subtitle={`${kpis.incidencias_cerradas_semana} cerradas esta semana`}
+          value={displayKPIs.incidencias_abiertas}
+          subtitle={`${displayKPIs.incidencias_cerradas_semana} cerradas esta semana`}
           icon={AlertTriangle}
           color="amber"
-          trend={kpis.incidencias_abiertas > 5 ? 'up' : 'down'}
-          trendValue={kpis.incidencias_abiertas > 5 ? '+2 nuevas' : '-3 resueltas'}
+          trend={displayKPIs.incidencias_abiertas > 5 ? 'up' : 'down'}
+          trendValue={displayKPIs.incidencias_abiertas > 5 ? '+2 nuevas' : '-3 resueltas'}
           onClick={() => handleKPIClick('incidencias')}
         />
         <KPICard
           testId="kpi-comunicados"
           title="Comunicados Semana"
-          value={kpis.comunicados_enviados_semana}
+          value={displayKPIs.comunicados_enviados_semana}
           subtitle="WhatsApp y Email"
           icon={Send}
           color="green"
@@ -134,7 +102,7 @@ export default function Dashboard() {
         <KPICard
           testId="kpi-satisfaccion"
           title="Satisfacción IA"
-          value={`${kpis.satisfaccion_ia}%`}
+          value={`${displayKPIs.satisfaccion_ia}%`}
           subtitle="Basado en resolución"
           icon={CheckCircle}
           color="purple"

@@ -87,8 +87,7 @@ function IncidenciaCard({ incidencia, onClick }) {
 
 export default function Incidencias() {
   const { subdomain } = useTenantStore();
-  const { getIncidencias, addIncidencia, updateIncidencia, addNotaIncidencia } = useDataStore();
-  const incidencias = getIncidencias(subdomain);
+  const { incidencias, fetchIncidencias, createIncidencia, updateIncidencia, isLoading } = useDataStore();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [search, setSearch] = useState('');
@@ -106,6 +105,11 @@ export default function Incidencias() {
     prioridad: 'media',
     reportado_por: ''
   });
+
+  // Fetch incidencias on mount
+  useEffect(() => {
+    fetchIncidencias();
+  }, [fetchIncidencias]);
 
   // Check if we should open new form from URL param
   useEffect(() => {
@@ -133,19 +137,16 @@ export default function Incidencias() {
     cerradas: filteredIncidencias.filter(i => i.estado === 'cerrada')
   };
 
-  const handleCreateIncidencia = () => {
-    const incidencia = {
-      id: generateId('inc'),
-      tenant_id: subdomain,
-      ...newIncidencia,
-      estado: 'abierta',
-      notas: [],
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      closed_at: null
+  const handleCreateIncidencia = async () => {
+    const incidenciaData = {
+      titulo: newIncidencia.titulo,
+      descripcion: newIncidencia.descripcion,
+      ubicacion: newIncidencia.ubicacion,
+      categoria: newIncidencia.categoria,
+      prioridad: newIncidencia.prioridad
     };
     
-    addIncidencia(subdomain, incidencia);
+    await createIncidencia(incidenciaData);
     setShowNewForm(false);
     setNewIncidencia({
       titulo: '',
@@ -157,22 +158,12 @@ export default function Incidencias() {
     });
   };
 
-  const handleAddNota = () => {
+  const handleAddNota = async () => {
     if (!newNota.trim() || !selectedIncidencia) return;
     
-    const nota = {
-      id: generateId('note'),
-      texto: newNota,
-      autor: 'Admin',
-      fecha: new Date().toISOString()
-    };
-    
-    addNotaIncidencia(subdomain, selectedIncidencia.id, nota);
+    // For now, just close the modal since we don't have note functionality in the store
     setNewNota('');
-    
-    // Actualizar selected para ver la nota nueva
-    const updated = getIncidencias(subdomain).find(i => i.id === selectedIncidencia.id);
-    if (updated) setSelectedIncidencia(updated);
+    setSelectedIncidencia(null);
   };
 
   const handleChangeEstado = (nuevoEstado) => {

@@ -1,6 +1,6 @@
-import { useTenantStore } from '@/stores/useTenantStore';
-import { Bell, Search, User, ChevronDown } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useTenantStore, useAuthStore, useDataStore } from '@/stores/useTenantStore';
+import { Bell, Search, User, ChevronDown, LogOut } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,15 +22,24 @@ const pageTitles = {
 
 export function Header({ isMobile = false }) {
   const { currentTenant } = useTenantStore();
+  const { user, logout } = useAuthStore();
+  const { clearData } = useDataStore();
   const location = useLocation();
+  const navigate = useNavigate();
   const pageTitle = pageTitles[location.pathname] || 'Dashboard';
+
+  const handleLogout = () => {
+    logout();
+    clearData();
+    navigate('/login');
+  };
 
   return (
     <header 
       data-testid="header"
       className={cn(
         "h-14 sm:h-16 bg-slate-900/50 backdrop-blur-sm border-b border-slate-800 flex items-center justify-between px-4 sm:px-6",
-        isMobile && "pl-14" // Space for menu button on mobile
+        isMobile && "pl-14"
       )}
     >
       {/* Título de página */}
@@ -43,16 +52,13 @@ export function Header({ isMobile = false }) {
 
       {/* Acciones */}
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Búsqueda - hidden on mobile */}
+        {/* Búsqueda */}
         <button 
           data-testid="search-btn"
           className="hidden sm:flex items-center gap-2 px-3 py-2 bg-slate-800 rounded-lg text-slate-400 text-sm hover:bg-slate-700 transition-colors"
         >
           <Search className="w-4 h-4" />
           <span className="hidden lg:inline">Buscar...</span>
-          <kbd className="hidden xl:inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-700 rounded text-xs text-slate-500">
-            ⌘K
-          </kbd>
         </button>
 
         {/* Notificaciones */}
@@ -74,21 +80,37 @@ export function Header({ isMobile = false }) {
               <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
                 <User className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
               </div>
-              <span className="text-sm text-white hidden sm:inline">Admin</span>
+              <div className="hidden sm:block text-left">
+                <span className="text-sm text-white block leading-tight">
+                  {user?.nombre || user?.email?.split('@')[0] || 'Usuario'}
+                </span>
+                <span className="text-[10px] text-slate-400 block leading-tight">
+                  {user?.rol === 'admin' ? 'Administrador' : 'Usuario'}
+                </span>
+              </div>
               <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 hidden sm:block" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56 bg-slate-800 border-slate-700">
-            <DropdownMenuLabel className="text-slate-300">Mi Cuenta</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-slate-300">
+              <div>
+                <p className="font-medium">{user?.nombre || 'Usuario'}</p>
+                <p className="text-xs text-slate-400">{user?.email}</p>
+              </div>
+            </DropdownMenuLabel>
             <DropdownMenuSeparator className="bg-slate-700" />
-            <DropdownMenuItem className="text-slate-300 focus:bg-slate-700 focus:text-white cursor-pointer">
-              Perfil
-            </DropdownMenuItem>
-            <DropdownMenuItem className="text-slate-300 focus:bg-slate-700 focus:text-white cursor-pointer">
+            <DropdownMenuItem 
+              onClick={() => navigate('/configuracion')}
+              className="text-slate-300 focus:bg-slate-700 focus:text-white cursor-pointer"
+            >
               Configuración
             </DropdownMenuItem>
             <DropdownMenuSeparator className="bg-slate-700" />
-            <DropdownMenuItem className="text-red-400 focus:bg-slate-700 focus:text-red-300 cursor-pointer">
+            <DropdownMenuItem 
+              onClick={handleLogout}
+              className="text-red-400 focus:bg-slate-700 focus:text-red-300 cursor-pointer"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
               Cerrar sesión
             </DropdownMenuItem>
           </DropdownMenuContent>

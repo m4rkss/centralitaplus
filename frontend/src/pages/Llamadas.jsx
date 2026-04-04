@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTenantStore, useDataStore } from '@/stores/useTenantStore';
 import { formatDateTime, formatDuration, STATUS_COLORS } from '@/lib/utils';
 import { Search, Filter, Download, Phone, ChevronLeft, ChevronRight, X, Play, Copy, CheckCircle } from 'lucide-react';
@@ -20,8 +20,7 @@ import { cn } from '@/lib/utils';
 
 export default function Llamadas() {
   const { subdomain } = useTenantStore();
-  const { getLlamadas } = useDataStore();
-  const llamadas = getLlamadas(subdomain);
+  const { llamadas, fetchLlamadas, isLoading } = useDataStore();
 
   const [search, setSearch] = useState('');
   const [filterProveedor, setFilterProveedor] = useState('todos');
@@ -31,6 +30,11 @@ export default function Llamadas() {
   const [copied, setCopied] = useState(false);
   
   const itemsPerPage = 10;
+
+  // Fetch llamadas on mount
+  useEffect(() => {
+    fetchLlamadas();
+  }, [fetchLlamadas]);
 
   // Filtrar llamadas
   const filteredLlamadas = useMemo(() => {

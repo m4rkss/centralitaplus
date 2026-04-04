@@ -69,8 +69,7 @@ function ComunicadoCard({ comunicado, onClick }) {
 
 export default function Comunicados() {
   const { subdomain } = useTenantStore();
-  const { getComunicados, addComunicado, updateComunicado } = useDataStore();
-  const comunicados = getComunicados(subdomain);
+  const { comunicados, fetchComunicados, createComunicado, sendComunicado, isLoading } = useDataStore();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [search, setSearch] = useState('');
@@ -83,6 +82,11 @@ export default function Comunicados() {
     mensaje: '',
     canal: 'whatsapp'
   });
+
+  // Fetch comunicados on mount
+  useEffect(() => {
+    fetchComunicados();
+  }, [fetchComunicados]);
 
   useEffect(() => {
     if (searchParams.get('action') === 'new') {
@@ -102,41 +106,31 @@ export default function Comunicados() {
     
     setSending(true);
     
-    // Simular envío a n8n (mock)
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const comunicado = {
-      id: generateId('com'),
-      tenant_id: subdomain,
-      ...newComunicado,
-      destinatarios_count: Math.floor(Math.random() * 300) + 100,
-      estado: 'enviado',
-      enviado_at: new Date().toISOString(),
-      created_at: new Date().toISOString()
-    };
-    
-    addComunicado(subdomain, comunicado);
-    setSending(false);
-    setShowNewForm(false);
-    setNewComunicado({ titulo: '', mensaje: '', canal: 'whatsapp' });
+    try {
+      await createComunicado(newComunicado);
+      setSending(false);
+      setShowNewForm(false);
+      setNewComunicado({
+        titulo: '',
+        mensaje: '',
+        canal: 'whatsapp'
+      });
+    } catch (error) {
+      setSending(false);
+      console.error('Error sending comunicado:', error);
+    }
   };
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     if (!newComunicado.titulo) return;
     
-    const comunicado = {
-      id: generateId('com'),
-      tenant_id: subdomain,
-      ...newComunicado,
-      destinatarios_count: 0,
-      estado: 'borrador',
-      enviado_at: null,
-      created_at: new Date().toISOString()
-    };
-    
-    addComunicado(subdomain, comunicado);
-    setShowNewForm(false);
-    setNewComunicado({ titulo: '', mensaje: '', canal: 'whatsapp' });
+    try {
+      await createComunicado(newComunicado);
+      setShowNewForm(false);
+      setNewComunicado({ titulo: '', mensaje: '', canal: 'whatsapp' });
+    } catch (error) {
+      console.error('Error saving draft:', error);
+    }
   };
 
   return (

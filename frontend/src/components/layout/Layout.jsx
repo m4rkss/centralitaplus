@@ -2,20 +2,18 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { useEffect, useState } from 'react';
-import { useTenantStore, useDataStore } from '@/stores/useTenantStore';
+import { useTenantStore } from '@/stores/useTenantStore';
 import { Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function Layout() {
-  const { initTenant, subdomain } = useTenantStore();
-  const { initData } = useDataStore();
+  const { initTenant } = useTenantStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     initTenant();
-    initData(subdomain);
-  }, [initTenant, initData, subdomain]);
+  }, [initTenant]);
 
   // Check if mobile
   useEffect(() => {
