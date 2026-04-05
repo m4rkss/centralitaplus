@@ -118,30 +118,37 @@
 - Cambio de tenant (demo)
 - Switches de integraciones
 
+### Documentación y DevOps ✅ (05/02/2026)
+- `README.md` — Documentación principal del proyecto
+- `docs/DEPLOYMENT.md` — Guía despliegue VPS con Docker + Nginx + SSL
+- `docs/DEVELOPMENT.md` — Guía desarrollo local con VS Code
+- `backend/Dockerfile` — Imagen Docker FastAPI (Python 3.11 slim)
+- `frontend/Dockerfile` — Multi-stage: build React + serve con Nginx en puerto 3000
+- `docker-compose.yml` — Orquestación MongoDB + Backend + Frontend
+
 ## Backlog (Priorizado)
 
-### P0 - Crítico (Next Sprint)
-- [ ] Autenticación real con JWT
-- [ ] Backend API para persistencia
-- [ ] Webhooks reales Vapi/Retell
-
 ### P1 - Importante
+- [ ] Registro de nuevos administradores (Admin only)
+- [ ] Reset de contraseña por email
 - [ ] Dashboard analytics avanzados
 - [ ] Exportación CSV/PDF
 - [ ] Notificaciones push
-- [ ] Histórico de incidencias
 
 ### P2 - Nice to Have
+- [ ] Log de auditoría de acciones de usuario
+- [ ] RBAC granular (Admin, Supervisor, Operador)
+- [ ] Migración mock DB a PostgreSQL real
 - [ ] Modo oscuro/claro toggle
 - [ ] Multi-idioma (ES/EN)
 - [ ] App móvil PWA
-- [ ] Integración calendario
 
 ## URLs
 - **Preview**: https://switchboard-pro-2.preview.emergentagent.com
 - **Tenant Demo**: ?tenant=santagadea (query param para desarrollo)
 
 ## Notas Técnicas
-- Los datos se almacenan en localStorage para la demo
+- Los datos se almacenan en mock DB (server.py) + localStorage para la demo
 - El iframe de Onyx requiere autenticación en el servicio externo
 - n8n está mockeado con setTimeout (1.5s delay)
+- Docker: Frontend multi-stage (build + nginx), Backend Python slim
