@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
+
 // Helper: XHR-based POST that bypasses fetch interception from dev overlay
 function xhrPost(url, body) {
   return new Promise((resolve, reject) => {

@@ -1,162 +1,39 @@
-# Centralita Virtual Ayuntamiento - PRD
+# Centralita Virtual - PRD
 
-## Información del Proyecto
-- **Nombre**: Centralita Virtual IA
-- **Tipo**: SaaS Multi-tenant
-- **Cliente Demo**: Ayuntamiento de Santa Gadea del Cid (Burgos/CyL)
-- **Fecha Inicio**: 04/01/2026
+## Project Overview
+Sistema SaaS multi-tenant de gestión de centralita telefónica para ayuntamientos.
 
-## Arquitectura
-
-### Stack Tecnológico
+## Tech Stack
 | Capa | Tecnología |
-|------|------------|
-| Frontend | React 19, Tailwind CSS, Shadcn/ui |
-| State Management | Zustand (auth + data stores) |
-| Gráficos | Recharts |
-| Backend | FastAPI + JWT Auth |
-| Database | MongoDB |
-| Auth | JWT (HS256, 24h expiration) |
-| Password | bcrypt (passlib) |
-| Integraciones | Vapi, Retell, Onyx Cloud, n8n |
+|------|-----------|
+| Frontend | React 19, Tailwind CSS, Shadcn UI, Zustand, Recharts |
+| Backend | Python 3.11, FastAPI, SQLAlchemy |
+| Base de datos | PostgreSQL 15 |
 
-### Multi-Tenant Architecture
-- **Tenant Detection**: Subdominio → tenant_id (santagadea.centralitaia.com → santa-gadea)
-- **Data Isolation**: ALL queries include WHERE tenant_id = session.tenant_id
-- **JWT Payload**: {sub: userId, tenant_id, rol, exp, iat}
-- **Protected Routes**: Redirect to /login if not authenticated
+## Database Schema (PostgreSQL)
+- `tenants` - Configuración multi-tenant
+- `users` - Usuarios con roles (admin/user)
+- `llamadas` - Registro de llamadas telefónicas
+- `incidencias` - Gestión de incidencias ciudadanas  
+- `comunicados` - Comunicados por WhatsApp/Email
+- `password_resets` - Tokens de recuperación
 
-### Estructura de Carpetas
-```
-/app/frontend/src/
-├── components/
-│   ├── ui/              # Shadcn components
-│   ├── layout/          # Sidebar, Header, Layout
-│   └── dashboard/       # KPICard, CallsChart, etc.
-├── pages/               # Dashboard, Llamadas, Incidencias, etc.
-├── stores/              # Zustand stores
-├── data/                # Mock data Santa Gadea
-├── types/               # Zod schemas
-└── lib/                 # Utilities
-```
-
-## User Personas
-1. **Admin Municipal**: Gestiona llamadas, incidencias y comunicados
-2. **Técnico**: Resuelve incidencias y actualiza estados
-3. **Ciudadano**: Usa el chatbot Onyx para consultas
-
-## Core Requirements (Static)
+## What's Been Implemented
+- [x] Migración completa de MongoDB a PostgreSQL (04/05/2026)
+- [x] Modelos SQLAlchemy con relaciones
+- [x] Seed data para tenant Santa Gadea
+- [x] 135 llamadas, 3 incidencias, 1 comunicado
+- [x] Autenticación JWT funcional
 - [x] Dashboard con KPIs en tiempo real
-- [x] Gráfico de llamadas por proveedor (Vapi/Retell)
-- [x] Tabla de llamadas con filtros y transcripción
-- [x] Gestión de incidencias con prioridades
-- [x] Sistema de comunicados (mock n8n)
-- [x] Chatbot RAG con Onyx Cloud
-- [x] Multi-tenant con detección de subdominio
 
-## Implementado (04/01/2026)
+## Credentials
+- PostgreSQL: `centralita:centralita123@localhost:5432/centralita_db`
+- Admin: `admin@santa-gadea.es` / `pass123`
+- Secretaria: `secretaria@santa-gadea.es` / `pass123`
 
-### Autenticación Multi-Tenant ✅ (Nuevo)
-- **Login Page**: Detección automática de tenant desde subdominio
-- **JWT Auth**: HS256, 24h expiration, payload con tenant_id
-- **Seed Data**: admin@santa-gadea.es/pass123, secretaria@santa-gadea.es/pass123
-- **Protected Routes**: Todas las rutas requieren autenticación
-- **Tenant Isolation**: Todos los datos filtrados por tenant_id
-- **User Header**: Nombre de usuario + rol + logout
+## API Endpoints
+All routes require JWT except `/api/auth/login` and `/api/tenant`
 
-### Fase 1: Foundation ✅
-- Schemas Zod para tipos
-- Mock data completo Santa Gadea (24 llamadas, 4 incidencias, 3 comunicados)
-- Zustand stores con localStorage persistence
-
-### Fase 2: Layout & Navigation ✅
-- Sidebar colapsable con navegación
-- Header con búsqueda y usuario
-- Layout responsivo
-
-### Fase 3: Dashboard ✅
-- KPICards interactivas (click → modal)
-- Gráfico Recharts área con Vapi/Retell
-- Actividad reciente
-- Acciones rápidas
-
-### Fase 4: Llamadas ✅
-- Tabla paginada con filtros
-- Modal detalle con transcripción
-- Badges por proveedor y estado
-
-### Fase 5: Incidencias ✅
-- Grid de cards por prioridad
-- Formulario crear/editar
-- Sistema de notas
-- Cambio de estado
-
-### Fase 6: Comunicados ✅
-- Lista con stats
-- Formulario con preview
-- Selección de canal (WA/Email/Ambos)
-- Mock n8n con delay
-
-### Fase 7: Chatbot NATIVO ✅ (Actualizado - 100% Responsive)
-- **Chat Nativo RAG** (NO iframe)
-- API proxy: `/api/onyx-chat` → Onyx Cloud
-- Mock fallback Santa Gadea (fiestas 14-17 agosto)
-- Markdown rendering (react-markdown)
-- MessageBubbles user/assistant con avatars
-- Quick suggestions
-- FileUpload (mock)
-- **Responsive Design**:
-  - Mobile (< 640px): Fullscreen chat, hamburger menu
-  - Tablet (768px): Adaptive layout
-  - Desktop (1024px+): Floating 400x600px window
-- ChatDock global (oculto en /chatbot)
-- Tabs: Chat Nativo / Iframe Onyx
-- UX: Typing dots, clear chat, minimize/maximize
-
-### Fase 8: Configuración ✅
-- Info del tenant
-- Cambio de tenant (demo)
-- Switches de integraciones
-
-### Documentación y DevOps ✅ (05/02/2026)
-- `README.md` — Documentación principal del proyecto
-- `docs/DEPLOYMENT.md` — Guía despliegue VPS con Docker + Nginx + SSL
-- `docs/DEVELOPMENT.md` — Guía desarrollo local con VS Code
-- `backend/Dockerfile` — Imagen Docker FastAPI (Python 3.11 slim)
-- `frontend/Dockerfile` — Multi-stage: build React + serve con Nginx en puerto 3000
-- `docker-compose.yml` — Orquestación MongoDB + Backend + Frontend
-
-### Gestión de Usuarios (Admin Only) ✅ (05/02/2026)
-- **Backend**: CRUD completo en `/api/admin/users` (GET, POST, PATCH, DELETE)
-- Protección por rol `admin` via dependency `require_admin`
-- Validaciones: email duplicado (409), rol inválido (400), no auto-eliminar (400)
-- **Frontend**: Página `/usuarios` con tabla, búsqueda, diálogo crear/editar
-- Sidebar: enlace "Usuarios" visible solo para admins
-- No-admins ven pantalla "Acceso restringido"
-- Tests: 100% backend (20/20) y frontend (all flows)
-
-## Backlog (Priorizado)
-
-### P1 - Importante
-- [ ] Reset de contraseña por email
-- [ ] Dashboard analytics avanzados
-- [ ] Exportación CSV/PDF
-- [ ] Notificaciones push
-
-### P2 - Nice to Have
-- [ ] Log de auditoría de acciones de usuario
-- [ ] RBAC granular (Admin, Supervisor, Operador)
-- [ ] Migración mock DB a PostgreSQL real
-- [ ] Modo oscuro/claro toggle
-- [ ] Multi-idioma (ES/EN)
-- [ ] App móvil PWA
-
-## URLs
-- **Preview**: https://switchboard-pro-2.preview.emergentagent.com
-- **Tenant Demo**: ?tenant=santagadea (query param para desarrollo)
-
-## Notas Técnicas
-- Los datos se almacenan en mock DB (server.py) + localStorage para la demo
-- El iframe de Onyx requiere autenticación en el servicio externo
-- n8n está mockeado con setTimeout (1.5s delay)
-- Docker: Frontend multi-stage (build + nginx), Backend Python slim
+## Next Tasks / Backlog
+- P1: Configurar PostgreSQL en producción
+- P2: Alembic migrations para cambios de schema

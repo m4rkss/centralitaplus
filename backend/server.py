@@ -1,9 +1,11 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, Request
-from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import String, Integer, DateTime, Text, Boolean, ForeignKey, select, func, and_
+from sqlalchemy.dialects.postgresql import JSONB
 import os
 import logging
 from pathlib import Path
@@ -11,8 +13,6 @@ from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Any
 import uuid
 from datetime import datetime, timezone, timedelta
-import httpx
-import json
 import asyncio
 import jwt
 from passlib.context import CryptContext
@@ -34,10 +34,11 @@ SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev")
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# PostgreSQL connection
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+asyncpg://centralita:centralita123@localhost:5432/centralita_db")
+
+engine = create_async_engine(DATABASE_URL, echo=False)
+async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 # Security
 security = HTTPBearer(auto_error=False)
@@ -53,19 +54,92 @@ app = FastAPI(title="Centralita Virtual API", version="2.0.0")
 api_router = APIRouter(prefix="/api")
 
 # ============================================================
-# MODELS
+# SQLAlchemy MODELS
 # ============================================================
 
-class User(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    email: str
-    password_hash: str
-    tenant_id: str
-    rol: str = "user"  # admin, user
-    nombre: str = ""
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    last_login: Optional[datetime] = None
+class Base(DeclarativeBase):
+    pass
+
+class TenantModel(Base):
+    __tablename__ = "tenants"
+    
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    subdomain: Mapped[str] = mapped_column(String(100), unique=True)
+    nombre: Mapped[str] = mapped_column(String(255))
+    primary_color: Mapped[str] = mapped_column(String(20), default="#1e3a5f")
+    config: Mapped[dict] = mapped_column(JSONB, default={})
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+class UserModel(Base):
+    __tablename__ = "users"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    email: Mapped[str] = mapped_column(String(255))
+    password_hash: Mapped[str] = mapped_column(String(255))
+    tenant_id: Mapped[str] = mapped_column(String(100), ForeignKey("tenants.id"))
+    rol: Mapped[str] = mapped_column(String(20), default="user")
+    nombre: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_login: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class LlamadaModel(Base):
+    __tablename__ = "llamadas"
+    
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(100), ForeignKey("tenants.id"))
+    fecha: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    duracion_segundos: Mapped[int] = mapped_column(Integer)
+    descripcion: Mapped[str] = mapped_column(Text)
+    proveedor: Mapped[str] = mapped_column(String(50), default="vapi")
+    estado: Mapped[str] = mapped_column(String(50), default="completada")
+    telefono_origen: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    transcripcion: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+class IncidenciaModel(Base):
+    __tablename__ = "incidencias"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(String(100), ForeignKey("tenants.id"))
+    titulo: Mapped[str] = mapped_column(String(255))
+    descripcion: Mapped[str] = mapped_column(Text, default="")
+    ubicacion: Mapped[str] = mapped_column(String(255), default="")
+    prioridad: Mapped[str] = mapped_column(String(20), default="media")
+    estado: Mapped[str] = mapped_column(String(20), default="abierta")
+    categoria: Mapped[str] = mapped_column(String(50), default="otros")
+    creador_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    cerrada_por_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    notas: Mapped[list] = mapped_column(JSONB, default=[])
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class ComunicadoModel(Base):
+    __tablename__ = "comunicados"
+    
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id: Mapped[str] = mapped_column(String(100), ForeignKey("tenants.id"))
+    titulo: Mapped[str] = mapped_column(String(255))
+    mensaje: Mapped[str] = mapped_column(Text)
+    canal: Mapped[str] = mapped_column(String(50), default="whatsapp")
+    destinatarios_count: Mapped[int] = mapped_column(Integer, default=0)
+    estado: Mapped[str] = mapped_column(String(20), default="borrador")
+    enviado_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+class PasswordResetModel(Base):
+    __tablename__ = "password_resets"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255))
+    tenant_id: Mapped[str] = mapped_column(String(100))
+    token: Mapped[str] = mapped_column(String(10))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+
+# ============================================================
+# PYDANTIC MODELS
+# ============================================================
 
 class UserCreate(BaseModel):
     email: str
@@ -91,63 +165,12 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user: UserResponse
 
-class Tenant(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str
-    subdomain: str
-    nombre: str
-    primary_color: str = "#1e3a5f"
-    config: Dict[str, Any] = {}
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-class Llamada(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    tenant_id: str
-    fecha: datetime
-    duracion_segundos: int
-    descripcion: str
-    proveedor: str = "vapi"
-    estado: str = "completada"
-    telefono_origen: Optional[str] = None
-    transcripcion: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-class Incidencia(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    tenant_id: str
-    titulo: str
-    descripcion: str = ""
-    ubicacion: str = ""
-    prioridad: str = "media"
-    estado: str = "abierta"
-    categoria: str = "otros"
-    creador_id: Optional[str] = None
-    cerrada_por_id: Optional[str] = None
-    notas: List[Dict] = []
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    closed_at: Optional[datetime] = None
-
 class IncidenciaCreate(BaseModel):
     titulo: str
     descripcion: str = ""
     ubicacion: str = ""
     prioridad: str = "media"
     categoria: str = "otros"
-
-class Comunicado(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    tenant_id: str
-    titulo: str
-    mensaje: str
-    canal: str = "whatsapp"
-    destinatarios_count: int = 0
-    estado: str = "borrador"
-    enviado_at: Optional[datetime] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ComunicadoCreate(BaseModel):
     titulo: str
@@ -213,15 +236,12 @@ def decode_token(token: str) -> Dict:
 
 def extract_tenant_from_host(host: str) -> str:
     """Extract tenant subdomain from host header"""
-    # santagadea.centralitaia.com -> santa-gadea
-    # switchboard-pro-2.preview.emergentagent.com -> santa-gadea (default)
     if not host:
         return "santa-gadea"
     
     parts = host.split(".")
     if len(parts) >= 3 and parts[0] not in ["www", "api"]:
         subdomain = parts[0]
-        # Map subdomains to tenant IDs
         tenant_map = {
             "santagadea": "santa-gadea",
             "santa-gadea": "santa-gadea",
@@ -229,7 +249,11 @@ def extract_tenant_from_host(host: str) -> str:
         }
         return tenant_map.get(subdomain, "santa-gadea")
     
-    return "santa-gadea"  # Default tenant
+    return "santa-gadea"
+
+async def get_db():
+    async with async_session() as session:
+        yield session
 
 # ============================================================
 # DEPENDENCIES
@@ -237,7 +261,7 @@ def extract_tenant_from_host(host: str) -> str:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    x_tenant: Optional[str] = Header(None, alias="X-Tenant-ID")
+    db: AsyncSession = Depends(get_db)
 ) -> Dict:
     """Verify JWT token and return user info"""
     if not credentials:
@@ -246,8 +270,11 @@ async def get_current_user(
     token = credentials.credentials
     payload = decode_token(token)
     
-    # Verify user exists
-    user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
+    result = await db.execute(
+        select(UserModel).where(UserModel.id == payload["sub"])
+    )
+    user = result.scalar_one_or_none()
+    
     if not user:
         raise HTTPException(status_code=401, detail="Usuario no encontrado")
     
@@ -259,7 +286,8 @@ async def get_current_user(
     }
 
 async def get_optional_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
 ) -> Optional[Dict]:
     """Optional auth - returns None if no valid token"""
     if not credentials:
@@ -275,256 +303,218 @@ async def get_optional_user(
     except:
         return None
 
-def get_tenant_from_request(request: Request, x_tenant: Optional[str] = Header(None, alias="X-Tenant-ID")) -> str:
-    """Extract tenant ID from request (header or host)"""
-    if x_tenant:
-        return x_tenant
-    host = request.headers.get("host", "")
-    return extract_tenant_from_host(host)
-
 # ============================================================
 # SEED DATA
 # ============================================================
 
 async def seed_database():
     """Seed initial data for Santa Gadea tenant"""
-    logger.info("Checking database seed...")
+    logger.info("Creating tables and checking seed...")
     
-    # Check if already seeded
-    admin_exists = await db.users.find_one({"email": "admin@santa-gadea.es"})
-    if admin_exists:
-        logger.info("Database already seeded")
-        return
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     
-    logger.info("Seeding database...")
-    
-    # Seed Tenants
-    tenants = [
-        {
-            "id": "santa-gadea",
-            "subdomain": "santagadea",
-            "nombre": "Ayuntamiento de Santa Gadea del Cid",
-            "primary_color": "#1e3a5f",
-            "config": {
-                "vapi_enabled": True,
-                "retell_enabled": True,
-                "onyx_workspace_id": "ws_santagadea_001"
-            },
-            "created_at": datetime.now(timezone.utc).isoformat()
-        },
-        {
-            "id": "demo",
-            "subdomain": "demo",
-            "nombre": "Demo Centralita",
-            "primary_color": "#6366f1",
-            "config": {},
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-    ]
-    await db.tenants.insert_many(tenants)
-    
-    # Seed Users
-    users = [
-        {
-            "id": str(uuid.uuid4()),
-            "email": "admin@santa-gadea.es",
-            "password_hash": hash_password("pass123"),
-            "tenant_id": "santa-gadea",
-            "rol": "admin",
-            "nombre": "Administrador",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "last_login": None
-        },
-        {
-            "id": str(uuid.uuid4()),
-            "email": "secretaria@santa-gadea.es",
-            "password_hash": hash_password("pass123"),
-            "tenant_id": "santa-gadea",
-            "rol": "user",
-            "nombre": "Secretaría Municipal",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "last_login": None
-        }
-    ]
-    await db.users.insert_many(users)
-    
-    # Seed Llamadas (24 for today)
-    llamadas = []
-    descripciones = [
-        "Reserva piscina municipal", "Información fiestas patronales",
-        "Consulta horario biblioteca", "Reserva pabellón deportivo",
-        "Queja ruidos nocturnos", "Información recogida basura",
-        "Consulta padrón municipal", "Reserva salón actos",
-        "Información licencias obras", "Consulta tributos locales",
-        "Reserva frontón municipal", "Información ayudas sociales",
-        "Consulta certificado empadronamiento", "Queja aparcamiento indebido",
-        "Información mercadillo semanal", "Reserva consultorio médico",
-        "Consulta bodas civiles", "Información transporte escolar",
-        "Queja contenedores llenos", "Consulta subvenciones",
-        "Reserva casa cultura", "Información censo electoral",
-        "Consulta ordenanzas municipales", "Queja farola fundida"
-    ]
-    
-    hoy = datetime.now(timezone.utc)
-    for i in range(24):
-        hora = 8 + (i // 3)
-        minuto = (i % 3) * 20 + (i % 15)
-        fecha = hoy.replace(hour=hora, minute=minuto, second=0, microsecond=0)
+    async with async_session() as db:
+        result = await db.execute(
+            select(UserModel).where(UserModel.email == "admin@santa-gadea.es")
+        )
+        if result.scalar_one_or_none():
+            logger.info("Database already seeded")
+            return
         
-        llamadas.append({
-            "id": f"call-{str(i+1).zfill(3)}",
-            "tenant_id": "santa-gadea",
-            "fecha": fecha.isoformat(),
-            "duracion_segundos": 30 + (i * 10) % 270,
-            "descripcion": descripciones[i % len(descripciones)],
-            "proveedor": "retell" if i % 3 == 0 else "vapi",
-            "estado": "revision" if i in [4, 13] else "completada",
-            "telefono_origen": f"+34 6{str(i).zfill(8)}",
-            "transcripcion": None,
-            "created_at": fecha.isoformat()
-        })
-    
-    # Add historical calls for chart
-    for dia in range(1, 7):
-        for j in range(15 + (dia % 10)):
-            fecha = (hoy - timedelta(days=dia)).replace(
-                hour=8 + (j % 10), 
-                minute=(j * 7) % 60
+        logger.info("Seeding database...")
+        
+        # Seed Tenants
+        tenants = [
+            TenantModel(
+                id="santa-gadea",
+                subdomain="santagadea",
+                nombre="Ayuntamiento de Santa Gadea del Cid",
+                primary_color="#1e3a5f",
+                config={"vapi_enabled": True, "retell_enabled": True, "onyx_workspace_id": "ws_santagadea_001"}
+            ),
+            TenantModel(
+                id="demo",
+                subdomain="demo",
+                nombre="Demo Centralita",
+                primary_color="#6366f1",
+                config={}
             )
-            llamadas.append({
-                "id": f"call-prev-{dia}-{j}",
-                "tenant_id": "santa-gadea",
-                "fecha": fecha.isoformat(),
-                "duracion_segundos": 30 + (j * 11) % 270,
-                "descripcion": descripciones[j % len(descripciones)],
-                "proveedor": "vapi" if j % 2 == 0 else "retell",
-                "estado": "completada",
-                "telefono_origen": f"+34 6{str(j).zfill(8)}",
-                "transcripcion": None,
-                "created_at": fecha.isoformat()
-            })
-    
-    await db.llamadas.insert_many(llamadas)
-    
-    # Seed Incidencias (3)
-    admin_id = users[0]["id"]
-    incidencias = [
-        {
-            "id": "inc-001",
-            "tenant_id": "santa-gadea",
-            "titulo": "Farola fundida Plaza Mayor",
-            "descripcion": "La farola junto al banco de la Plaza Mayor está fundida desde hace 3 días.",
-            "ubicacion": "Plaza Mayor, junto al banco",
-            "prioridad": "alta",
-            "estado": "abierta",
-            "categoria": "alumbrado",
-            "creador_id": admin_id,
-            "cerrada_por_id": None,
-            "notas": [],
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "closed_at": None
-        },
-        {
-            "id": "inc-002",
-            "tenant_id": "santa-gadea",
-            "titulo": "Fuga de agua en C/ Iglesia",
-            "descripcion": "Charco constante en la acera del número 5. Posible fuga en tubería.",
-            "ubicacion": "C/ Iglesia, 5",
-            "prioridad": "alta",
-            "estado": "abierta",
-            "categoria": "agua",
-            "creador_id": admin_id,
-            "cerrada_por_id": None,
-            "notas": [],
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "closed_at": None
-        },
-        {
-            "id": "inc-003",
-            "tenant_id": "santa-gadea",
-            "titulo": "Bache en Avenida Principal",
-            "descripcion": "Bache de tamaño medio en la calzada, puede dañar vehículos.",
-            "ubicacion": "Av. Principal, altura nº 23",
-            "prioridad": "media",
-            "estado": "en_progreso",
-            "categoria": "vias_publicas",
-            "creador_id": admin_id,
-            "cerrada_por_id": None,
-            "notas": [{
-                "id": "note-001",
-                "texto": "Material solicitado para reparación",
-                "autor": "Brigada Municipal",
-                "fecha": datetime.now(timezone.utc).isoformat()
-            }],
-            "created_at": (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "closed_at": None
-        }
-    ]
-    await db.incidencias.insert_many(incidencias)
-    
-    # Seed Comunicados (1)
-    comunicados = [
-        {
-            "id": "com-001",
-            "tenant_id": "santa-gadea",
-            "titulo": "Corte de agua programado",
-            "mensaje": "Se informa que el día 05/01 de 09:00 a 14:00 se realizarán trabajos de mantenimiento en la red de agua.",
-            "canal": "whatsapp",
-            "destinatarios_count": 234,
-            "estado": "enviado",
-            "enviado_at": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
-            "created_at": (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
-        }
-    ]
-    await db.comunicados.insert_many(comunicados)
-    
-    logger.info("Database seeded successfully!")
+        ]
+        db.add_all(tenants)
+        await db.flush()
+        
+        # Seed Users
+        admin_id = str(uuid.uuid4())
+        users = [
+            UserModel(
+                id=admin_id,
+                email="admin@santa-gadea.es",
+                password_hash=hash_password("pass123"),
+                tenant_id="santa-gadea",
+                rol="admin",
+                nombre="Administrador"
+            ),
+            UserModel(
+                id=str(uuid.uuid4()),
+                email="secretaria@santa-gadea.es",
+                password_hash=hash_password("pass123"),
+                tenant_id="santa-gadea",
+                rol="user",
+                nombre="Secretaría Municipal"
+            )
+        ]
+        db.add_all(users)
+        
+        # Seed Llamadas
+        descripciones = [
+            "Reserva piscina municipal", "Información fiestas patronales",
+            "Consulta horario biblioteca", "Reserva pabellón deportivo",
+            "Queja ruidos nocturnos", "Información recogida basura",
+            "Consulta padrón municipal", "Reserva salón actos",
+            "Información licencias obras", "Consulta tributos locales",
+            "Reserva frontón municipal", "Información ayudas sociales",
+            "Consulta certificado empadronamiento", "Queja aparcamiento indebido",
+            "Información mercadillo semanal", "Reserva consultorio médico",
+            "Consulta bodas civiles", "Información transporte escolar",
+            "Queja contenedores llenos", "Consulta subvenciones",
+            "Reserva casa cultura", "Información censo electoral",
+            "Consulta ordenanzas municipales", "Queja farola fundida"
+        ]
+        
+        hoy = datetime.now(timezone.utc)
+        llamadas = []
+        
+        # Today's calls
+        for i in range(24):
+            hora = 8 + (i // 3)
+            minuto = (i % 3) * 20 + (i % 15)
+            fecha = hoy.replace(hour=hora, minute=minuto, second=0, microsecond=0)
+            
+            llamadas.append(LlamadaModel(
+                id=f"call-{str(i+1).zfill(3)}",
+                tenant_id="santa-gadea",
+                fecha=fecha,
+                duracion_segundos=30 + (i * 10) % 270,
+                descripcion=descripciones[i % len(descripciones)],
+                proveedor="retell" if i % 3 == 0 else "vapi",
+                estado="revision" if i in [4, 13] else "completada",
+                telefono_origen=f"+34 6{str(i).zfill(8)}"
+            ))
+        
+        # Historical calls
+        for dia in range(1, 7):
+            for j in range(15 + (dia % 10)):
+                fecha = (hoy - timedelta(days=dia)).replace(hour=8 + (j % 10), minute=(j * 7) % 60)
+                llamadas.append(LlamadaModel(
+                    id=f"call-prev-{dia}-{j}",
+                    tenant_id="santa-gadea",
+                    fecha=fecha,
+                    duracion_segundos=30 + (j * 11) % 270,
+                    descripcion=descripciones[j % len(descripciones)],
+                    proveedor="vapi" if j % 2 == 0 else "retell",
+                    estado="completada",
+                    telefono_origen=f"+34 6{str(j).zfill(8)}"
+                ))
+        
+        db.add_all(llamadas)
+        
+        # Seed Incidencias
+        incidencias = [
+            IncidenciaModel(
+                id="inc-001",
+                tenant_id="santa-gadea",
+                titulo="Farola fundida Plaza Mayor",
+                descripcion="La farola junto al banco de la Plaza Mayor está fundida desde hace 3 días.",
+                ubicacion="Plaza Mayor, junto al banco",
+                prioridad="alta",
+                estado="abierta",
+                categoria="alumbrado",
+                creador_id=admin_id
+            ),
+            IncidenciaModel(
+                id="inc-002",
+                tenant_id="santa-gadea",
+                titulo="Fuga de agua en C/ Iglesia",
+                descripcion="Charco constante en la acera del número 5. Posible fuga en tubería.",
+                ubicacion="C/ Iglesia, 5",
+                prioridad="alta",
+                estado="abierta",
+                categoria="agua",
+                creador_id=admin_id
+            ),
+            IncidenciaModel(
+                id="inc-003",
+                tenant_id="santa-gadea",
+                titulo="Bache en Avenida Principal",
+                descripcion="Bache de tamaño medio en la calzada, puede dañar vehículos.",
+                ubicacion="Av. Principal, altura nº 23",
+                prioridad="media",
+                estado="en_progreso",
+                categoria="vias_publicas",
+                creador_id=admin_id,
+                notas=[{"id": "note-001", "texto": "Material solicitado para reparación", "autor": "Brigada Municipal", "fecha": datetime.now(timezone.utc).isoformat()}],
+                created_at=datetime.now(timezone.utc) - timedelta(days=2)
+            )
+        ]
+        db.add_all(incidencias)
+        
+        # Seed Comunicados
+        comunicados = [
+            ComunicadoModel(
+                id="com-001",
+                tenant_id="santa-gadea",
+                titulo="Corte de agua programado",
+                mensaje="Se informa que el día 05/01 de 09:00 a 14:00 se realizarán trabajos de mantenimiento en la red de agua.",
+                canal="whatsapp",
+                destinatarios_count=234,
+                estado="enviado",
+                enviado_at=datetime.now(timezone.utc) - timedelta(days=1),
+                created_at=datetime.now(timezone.utc) - timedelta(days=2)
+            )
+        ]
+        db.add_all(comunicados)
+        
+        await db.commit()
+        logger.info("Database seeded successfully!")
 
 # ============================================================
 # AUTH ENDPOINTS
 # ============================================================
 
 @api_router.post("/auth/login", response_model=TokenResponse)
-async def login(credentials: UserLogin, request: Request):
+async def login(credentials: UserLogin, request: Request, db: AsyncSession = Depends(get_db)):
     """Login and get JWT token"""
-    # Get tenant from request or credentials
     tenant_id = credentials.tenant_id or extract_tenant_from_host(request.headers.get("host", ""))
     
     logger.info(f"Login attempt: {credentials.email} for tenant: {tenant_id}")
     
-    # Find user
-    user = await db.users.find_one(
-        {"email": credentials.email, "tenant_id": tenant_id},
-        {"_id": 0}
+    result = await db.execute(
+        select(UserModel).where(
+            and_(UserModel.email == credentials.email, UserModel.tenant_id == tenant_id)
+        )
     )
+    user = result.scalar_one_or_none()
     
     if not user:
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
     
-    # Verify password
-    if not verify_password(credentials.password, user["password_hash"]):
+    if not verify_password(credentials.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
     
-    # Update last login
-    await db.users.update_one(
-        {"id": user["id"]},
-        {"$set": {"last_login": datetime.now(timezone.utc).isoformat()}}
-    )
+    user.last_login = datetime.now(timezone.utc)
+    await db.commit()
     
-    # Create token
-    token = create_access_token(user["id"], user["tenant_id"], user["rol"])
+    token = create_access_token(user.id, user.tenant_id, user.rol)
     
     return TokenResponse(
         access_token=token,
         user=UserResponse(
-            id=user["id"],
-            email=user["email"],
-            tenant_id=user["tenant_id"],
-            rol=user["rol"],
-            nombre=user.get("nombre", "")
+            id=user.id,
+            email=user.email,
+            tenant_id=user.tenant_id,
+            rol=user.rol,
+            nombre=user.nombre or ""
         )
     )
 
@@ -533,11 +523,11 @@ async def get_current_user_info(auth: Dict = Depends(get_current_user)):
     """Get current user info"""
     user = auth["user"]
     return UserResponse(
-        id=user["id"],
-        email=user["email"],
-        tenant_id=user["tenant_id"],
-        rol=user["rol"],
-        nombre=user.get("nombre", "")
+        id=user.id,
+        email=user.email,
+        tenant_id=user.tenant_id,
+        rol=user.rol,
+        nombre=user.nombre or ""
     )
 
 @api_router.post("/auth/logout")
@@ -546,38 +536,47 @@ async def logout():
     return {"message": "Sesión cerrada correctamente"}
 
 @api_router.post("/auth/password-reset/request")
-async def request_password_reset(data: PasswordResetRequest, request: Request):
+async def request_password_reset(data: PasswordResetRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """Send password reset email with a 6-digit code"""
-    tenant_id = data.tenant_id or get_tenant_from_request(request)
+    tenant_id = data.tenant_id or extract_tenant_from_host(request.headers.get("host", ""))
 
-    user = await db.users.find_one(
-        {"email": data.email, "tenant_id": tenant_id},
-        {"_id": 0}
+    result = await db.execute(
+        select(UserModel).where(
+            and_(UserModel.email == data.email, UserModel.tenant_id == tenant_id)
+        )
     )
+    user = result.scalar_one_or_none()
 
-    # Always return success to not leak user existence
     if not user:
         logger.info(f"Password reset requested for unknown email: {data.email}")
         return {"message": "Si el email existe, recibirás un correo con instrucciones"}
 
-    # Generate 6-digit code and store it
     code = f"{secrets.randbelow(900000) + 100000}"
     expires = datetime.now(timezone.utc) + timedelta(minutes=15)
 
-    await db.password_resets.delete_many({"email": data.email, "tenant_id": tenant_id})
-    await db.password_resets.insert_one({
-        "email": data.email,
-        "tenant_id": tenant_id,
-        "token": code,
-        "expires_at": expires.isoformat(),
-        "used": False
-    })
+    # Delete old resets
+    await db.execute(
+        PasswordResetModel.__table__.delete().where(
+            and_(PasswordResetModel.email == data.email, PasswordResetModel.tenant_id == tenant_id)
+        )
+    )
+    
+    reset = PasswordResetModel(
+        email=data.email,
+        tenant_id=tenant_id,
+        token=code,
+        expires_at=expires,
+        used=False
+    )
+    db.add(reset)
+    await db.commit()
 
-    # Get tenant name for email
-    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
-    tenant_name = tenant["nombre"] if tenant else "Centralita Virtual"
+    result = await db.execute(
+        select(TenantModel).where(TenantModel.id == tenant_id)
+    )
+    tenant = result.scalar_one_or_none()
+    tenant_name = tenant.nombre if tenant else "Centralita Virtual"
 
-    # Send email via Resend
     html_content = f"""
     <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#0f172a;border-radius:12px;color:#e2e8f0;">
       <h2 style="color:#fff;margin:0 0 8px;">Restablecer contraseña</h2>
@@ -605,39 +604,41 @@ async def request_password_reset(data: PasswordResetRequest, request: Request):
     return {"message": "Si el email existe, recibirás un correo con instrucciones"}
 
 @api_router.post("/auth/password-reset/confirm")
-async def confirm_password_reset(data: PasswordResetConfirm):
+async def confirm_password_reset(data: PasswordResetConfirm, db: AsyncSession = Depends(get_db)):
     """Verify code and reset password"""
-    reset = await db.password_resets.find_one(
-        {"token": data.token, "used": False},
-        {"_id": 0}
+    result = await db.execute(
+        select(PasswordResetModel).where(
+            and_(PasswordResetModel.token == data.token, PasswordResetModel.used == False)
+        )
     )
+    reset = result.scalar_one_or_none()
 
     if not reset:
         raise HTTPException(status_code=400, detail="Código inválido o ya utilizado")
 
-    if datetime.fromisoformat(reset["expires_at"]) < datetime.now(timezone.utc):
+    if reset.expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="El código ha expirado. Solicita uno nuevo.")
 
     if len(data.new_password) < 4:
         raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 4 caracteres")
 
-    # Update password
-    await db.users.update_one(
-        {"email": reset["email"], "tenant_id": reset["tenant_id"]},
-        {"$set": {"password_hash": hash_password(data.new_password)}}
+    result = await db.execute(
+        select(UserModel).where(
+            and_(UserModel.email == reset.email, UserModel.tenant_id == reset.tenant_id)
+        )
     )
+    user = result.scalar_one_or_none()
+    if user:
+        user.password_hash = hash_password(data.new_password)
+    
+    reset.used = True
+    await db.commit()
 
-    # Mark token as used
-    await db.password_resets.update_one(
-        {"token": data.token},
-        {"$set": {"used": True}}
-    )
-
-    logger.info(f"Password reset completed for {reset['email']}")
+    logger.info(f"Password reset completed for {reset.email}")
     return {"message": "Contraseña actualizada correctamente"}
 
 # ============================================================
-# ADMIN: USER MANAGEMENT (Admin only)
+# ADMIN: USER MANAGEMENT
 # ============================================================
 
 async def require_admin(auth: Dict = Depends(get_current_user)) -> Dict:
@@ -646,95 +647,90 @@ async def require_admin(auth: Dict = Depends(get_current_user)) -> Dict:
     return auth
 
 @api_router.get("/admin/users")
-async def list_users(auth: Dict = Depends(require_admin)):
+async def list_users(auth: Dict = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     """List all users for the admin's tenant"""
-    users = await db.users.find(
-        {"tenant_id": auth["tenant_id"]},
-        {"_id": 0, "password_hash": 0}
-    ).sort("created_at", -1).to_list(200)
-    return {"users": users}
+    result = await db.execute(
+        select(UserModel).where(UserModel.tenant_id == auth["tenant_id"]).order_by(UserModel.created_at.desc())
+    )
+    users = result.scalars().all()
+    return {"users": [
+        {"id": u.id, "email": u.email, "tenant_id": u.tenant_id, "rol": u.rol, "nombre": u.nombre, "created_at": u.created_at.isoformat() if u.created_at else None, "last_login": u.last_login.isoformat() if u.last_login else None}
+        for u in users
+    ]}
 
 @api_router.post("/admin/users", response_model=UserResponse)
-async def create_user(data: AdminUserCreate, auth: Dict = Depends(require_admin)):
+async def create_user(data: AdminUserCreate, auth: Dict = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     """Create a new user in the admin's tenant"""
-    existing = await db.users.find_one({
-        "email": data.email,
-        "tenant_id": auth["tenant_id"]
-    })
-    if existing:
+    result = await db.execute(
+        select(UserModel).where(
+            and_(UserModel.email == data.email, UserModel.tenant_id == auth["tenant_id"])
+        )
+    )
+    if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Ya existe un usuario con ese email")
 
     if data.rol not in ("admin", "user"):
         raise HTTPException(status_code=400, detail="Rol inválido. Usa 'admin' o 'user'")
 
-    user = {
-        "id": str(uuid.uuid4()),
-        "email": data.email,
-        "password_hash": hash_password(data.password),
-        "tenant_id": auth["tenant_id"],
-        "rol": data.rol,
-        "nombre": data.nombre,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "last_login": None
-    }
-    await db.users.insert_one(user)
-
-    return UserResponse(
-        id=user["id"],
-        email=user["email"],
-        tenant_id=user["tenant_id"],
-        rol=user["rol"],
-        nombre=user["nombre"]
+    user = UserModel(
+        id=str(uuid.uuid4()),
+        email=data.email,
+        password_hash=hash_password(data.password),
+        tenant_id=auth["tenant_id"],
+        rol=data.rol,
+        nombre=data.nombre
     )
+    db.add(user)
+    await db.commit()
+
+    return UserResponse(id=user.id, email=user.email, tenant_id=user.tenant_id, rol=user.rol, nombre=user.nombre)
 
 @api_router.patch("/admin/users/{user_id}", response_model=UserResponse)
-async def update_user(user_id: str, data: AdminUserUpdate, auth: Dict = Depends(require_admin)):
+async def update_user(user_id: str, data: AdminUserUpdate, auth: Dict = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     """Update a user in the admin's tenant"""
-    user = await db.users.find_one({"id": user_id, "tenant_id": auth["tenant_id"]})
+    result = await db.execute(
+        select(UserModel).where(and_(UserModel.id == user_id, UserModel.tenant_id == auth["tenant_id"]))
+    )
+    user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
-    updates = {}
     if data.email is not None:
-        dup = await db.users.find_one({
-            "email": data.email,
-            "tenant_id": auth["tenant_id"],
-            "id": {"$ne": user_id}
-        })
-        if dup:
+        dup_result = await db.execute(
+            select(UserModel).where(
+                and_(UserModel.email == data.email, UserModel.tenant_id == auth["tenant_id"], UserModel.id != user_id)
+            )
+        )
+        if dup_result.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Ya existe un usuario con ese email")
-        updates["email"] = data.email
+        user.email = data.email
     if data.password is not None:
-        updates["password_hash"] = hash_password(data.password)
+        user.password_hash = hash_password(data.password)
     if data.rol is not None:
         if data.rol not in ("admin", "user"):
             raise HTTPException(status_code=400, detail="Rol inválido")
-        updates["rol"] = data.rol
+        user.rol = data.rol
     if data.nombre is not None:
-        updates["nombre"] = data.nombre
+        user.nombre = data.nombre
 
-    if updates:
-        await db.users.update_one({"id": user_id}, {"$set": updates})
-
-    updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
-    return UserResponse(
-        id=updated["id"],
-        email=updated["email"],
-        tenant_id=updated["tenant_id"],
-        rol=updated["rol"],
-        nombre=updated.get("nombre", "")
-    )
+    await db.commit()
+    return UserResponse(id=user.id, email=user.email, tenant_id=user.tenant_id, rol=user.rol, nombre=user.nombre or "")
 
 @api_router.delete("/admin/users/{user_id}")
-async def delete_user(user_id: str, auth: Dict = Depends(require_admin)):
+async def delete_user(user_id: str, auth: Dict = Depends(require_admin), db: AsyncSession = Depends(get_db)):
     """Delete a user from the admin's tenant"""
     if user_id == auth["user_id"]:
         raise HTTPException(status_code=400, detail="No puedes eliminarte a ti mismo")
 
-    result = await db.users.delete_one({"id": user_id, "tenant_id": auth["tenant_id"]})
-    if result.deleted_count == 0:
+    result = await db.execute(
+        select(UserModel).where(and_(UserModel.id == user_id, UserModel.tenant_id == auth["tenant_id"]))
+    )
+    user = result.scalar_one_or_none()
+    if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
+    await db.delete(user)
+    await db.commit()
     return {"message": "Usuario eliminado correctamente"}
 
 # ============================================================
@@ -742,13 +738,14 @@ async def delete_user(user_id: str, auth: Dict = Depends(require_admin)):
 # ============================================================
 
 @api_router.get("/tenant")
-async def get_tenant_info(request: Request, x_tenant: Optional[str] = Header(None, alias="X-Tenant-ID")):
+async def get_tenant_info(request: Request, x_tenant: Optional[str] = Header(None, alias="X-Tenant-ID"), db: AsyncSession = Depends(get_db)):
     """Get tenant info from subdomain"""
     tenant_id = x_tenant or extract_tenant_from_host(request.headers.get("host", ""))
-    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+    
+    result = await db.execute(select(TenantModel).where(TenantModel.id == tenant_id))
+    tenant = result.scalar_one_or_none()
     
     if not tenant:
-        # Return default
         return {
             "id": "santa-gadea",
             "subdomain": "santagadea",
@@ -756,33 +753,49 @@ async def get_tenant_info(request: Request, x_tenant: Optional[str] = Header(Non
             "primary_color": "#1e3a5f"
         }
     
-    return tenant
+    return {
+        "id": tenant.id,
+        "subdomain": tenant.subdomain,
+        "nombre": tenant.nombre,
+        "primary_color": tenant.primary_color,
+        "config": tenant.config,
+        "created_at": tenant.created_at.isoformat() if tenant.created_at else None
+    }
 
 # ============================================================
-# LLAMADAS ENDPOINTS (PROTECTED + TENANT FILTERED)
+# LLAMADAS ENDPOINTS
 # ============================================================
 
 @api_router.get("/llamadas")
-async def get_llamadas(
-    auth: Dict = Depends(get_current_user),
-    limit: int = 100,
-    skip: int = 0
-):
+async def get_llamadas(auth: Dict = Depends(get_current_user), db: AsyncSession = Depends(get_db), limit: int = 100, skip: int = 0):
     """Get llamadas filtered by tenant"""
-    tenant_id = auth["tenant_id"]
+    result = await db.execute(
+        select(LlamadaModel)
+        .where(LlamadaModel.tenant_id == auth["tenant_id"])
+        .order_by(LlamadaModel.fecha.desc())
+        .offset(skip).limit(limit)
+    )
+    llamadas = result.scalars().all()
     
-    llamadas = await db.llamadas.find(
-        {"tenant_id": tenant_id},
-        {"_id": 0}
-    ).sort("fecha", -1).skip(skip).limit(limit).to_list(limit)
+    total_result = await db.execute(
+        select(func.count()).select_from(LlamadaModel).where(LlamadaModel.tenant_id == auth["tenant_id"])
+    )
+    total = total_result.scalar()
     
-    return {"llamadas": llamadas, "total": await db.llamadas.count_documents({"tenant_id": tenant_id})}
+    return {
+        "llamadas": [
+            {"id": l.id, "tenant_id": l.tenant_id, "fecha": l.fecha.isoformat(), "duracion_segundos": l.duracion_segundos,
+             "descripcion": l.descripcion, "proveedor": l.proveedor, "estado": l.estado, "telefono_origen": l.telefono_origen,
+             "transcripcion": l.transcripcion, "created_at": l.created_at.isoformat() if l.created_at else None}
+            for l in llamadas
+        ],
+        "total": total
+    }
 
 @api_router.get("/llamadas/chart")
-async def get_llamadas_chart(auth: Dict = Depends(get_current_user)):
+async def get_llamadas_chart(auth: Dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Get chart data for last 7 days"""
-    tenant_id = auth["tenant_id"]
-    dias = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+    dias = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
     hoy = datetime.now(timezone.utc)
     
     chart_data = []
@@ -791,16 +804,24 @@ async def get_llamadas_chart(auth: Dict = Depends(get_current_user)):
         fecha_start = fecha.replace(hour=0, minute=0, second=0, microsecond=0)
         fecha_end = fecha_start + timedelta(days=1)
         
-        total = await db.llamadas.count_documents({
-            "tenant_id": tenant_id,
-            "fecha": {"$gte": fecha_start.isoformat(), "$lt": fecha_end.isoformat()}
-        })
+        total_result = await db.execute(
+            select(func.count()).select_from(LlamadaModel).where(
+                and_(LlamadaModel.tenant_id == auth["tenant_id"],
+                     LlamadaModel.fecha >= fecha_start,
+                     LlamadaModel.fecha < fecha_end)
+            )
+        )
+        total = total_result.scalar()
         
-        vapi = await db.llamadas.count_documents({
-            "tenant_id": tenant_id,
-            "fecha": {"$gte": fecha_start.isoformat(), "$lt": fecha_end.isoformat()},
-            "proveedor": "vapi"
-        })
+        vapi_result = await db.execute(
+            select(func.count()).select_from(LlamadaModel).where(
+                and_(LlamadaModel.tenant_id == auth["tenant_id"],
+                     LlamadaModel.fecha >= fecha_start,
+                     LlamadaModel.fecha < fecha_end,
+                     LlamadaModel.proveedor == "vapi")
+            )
+        )
+        vapi = vapi_result.scalar()
         
         chart_data.append({
             "dia": dias[fecha.weekday()],
@@ -813,155 +834,177 @@ async def get_llamadas_chart(auth: Dict = Depends(get_current_user)):
     return chart_data
 
 @api_router.get("/llamadas/{llamada_id}")
-async def get_llamada(llamada_id: str, auth: Dict = Depends(get_current_user)):
+async def get_llamada(llamada_id: str, auth: Dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Get single llamada"""
-    llamada = await db.llamadas.find_one(
-        {"id": llamada_id, "tenant_id": auth["tenant_id"]},
-        {"_id": 0}
+    result = await db.execute(
+        select(LlamadaModel).where(
+            and_(LlamadaModel.id == llamada_id, LlamadaModel.tenant_id == auth["tenant_id"])
+        )
     )
+    llamada = result.scalar_one_or_none()
     if not llamada:
         raise HTTPException(status_code=404, detail="Llamada no encontrada")
-    return llamada
+    
+    return {
+        "id": llamada.id, "tenant_id": llamada.tenant_id, "fecha": llamada.fecha.isoformat(),
+        "duracion_segundos": llamada.duracion_segundos, "descripcion": llamada.descripcion,
+        "proveedor": llamada.proveedor, "estado": llamada.estado, "telefono_origen": llamada.telefono_origen,
+        "transcripcion": llamada.transcripcion
+    }
 
 # ============================================================
-# INCIDENCIAS ENDPOINTS (PROTECTED + TENANT FILTERED)
+# INCIDENCIAS ENDPOINTS
 # ============================================================
 
 @api_router.get("/incidencias")
-async def get_incidencias(auth: Dict = Depends(get_current_user)):
+async def get_incidencias(auth: Dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Get incidencias filtered by tenant"""
-    incidencias = await db.incidencias.find(
-        {"tenant_id": auth["tenant_id"]},
-        {"_id": 0}
-    ).sort("created_at", -1).to_list(100)
+    result = await db.execute(
+        select(IncidenciaModel)
+        .where(IncidenciaModel.tenant_id == auth["tenant_id"])
+        .order_by(IncidenciaModel.created_at.desc())
+    )
+    incidencias = result.scalars().all()
     
-    return {"incidencias": incidencias}
+    return {"incidencias": [
+        {"id": i.id, "tenant_id": i.tenant_id, "titulo": i.titulo, "descripcion": i.descripcion,
+         "ubicacion": i.ubicacion, "prioridad": i.prioridad, "estado": i.estado, "categoria": i.categoria,
+         "creador_id": i.creador_id, "cerrada_por_id": i.cerrada_por_id, "notas": i.notas,
+         "created_at": i.created_at.isoformat() if i.created_at else None,
+         "updated_at": i.updated_at.isoformat() if i.updated_at else None,
+         "closed_at": i.closed_at.isoformat() if i.closed_at else None}
+        for i in incidencias
+    ]}
 
 @api_router.post("/incidencias")
-async def create_incidencia(
-    data: IncidenciaCreate,
-    auth: Dict = Depends(get_current_user)
-):
+async def create_incidencia(data: IncidenciaCreate, auth: Dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Create new incidencia"""
-    incidencia = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": auth["tenant_id"],
-        "titulo": data.titulo,
-        "descripcion": data.descripcion,
-        "ubicacion": data.ubicacion,
-        "prioridad": data.prioridad,
-        "estado": "abierta",
-        "categoria": data.categoria,
-        "creador_id": auth["user_id"],
-        "cerrada_por_id": None,
-        "notas": [],
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "closed_at": None
-    }
+    incidencia = IncidenciaModel(
+        id=str(uuid.uuid4()),
+        tenant_id=auth["tenant_id"],
+        titulo=data.titulo,
+        descripcion=data.descripcion,
+        ubicacion=data.ubicacion,
+        prioridad=data.prioridad,
+        estado="abierta",
+        categoria=data.categoria,
+        creador_id=auth["user_id"]
+    )
     
-    await db.incidencias.insert_one(incidencia)
-    incidencia.pop("_id", None)
-    return incidencia
+    db.add(incidencia)
+    await db.commit()
+    
+    return {
+        "id": incidencia.id, "tenant_id": incidencia.tenant_id, "titulo": incidencia.titulo,
+        "descripcion": incidencia.descripcion, "ubicacion": incidencia.ubicacion,
+        "prioridad": incidencia.prioridad, "estado": incidencia.estado, "categoria": incidencia.categoria,
+        "creador_id": incidencia.creador_id, "notas": incidencia.notas,
+        "created_at": incidencia.created_at.isoformat() if incidencia.created_at else None
+    }
 
 @api_router.patch("/incidencias/{incidencia_id}")
-async def update_incidencia(
-    incidencia_id: str,
-    updates: Dict[str, Any],
-    auth: Dict = Depends(get_current_user)
-):
+async def update_incidencia(incidencia_id: str, updates: Dict[str, Any], auth: Dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Update incidencia"""
-    # Verify ownership
-    incidencia = await db.incidencias.find_one(
-        {"id": incidencia_id, "tenant_id": auth["tenant_id"]}
+    result = await db.execute(
+        select(IncidenciaModel).where(
+            and_(IncidenciaModel.id == incidencia_id, IncidenciaModel.tenant_id == auth["tenant_id"])
+        )
     )
+    incidencia = result.scalar_one_or_none()
     if not incidencia:
         raise HTTPException(status_code=404, detail="Incidencia no encontrada")
     
-    # Update
-    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    for key, value in updates.items():
+        if hasattr(incidencia, key) and key not in ["id", "tenant_id", "created_at"]:
+            setattr(incidencia, key, value)
+    
+    incidencia.updated_at = datetime.now(timezone.utc)
     if updates.get("estado") == "cerrada":
-        updates["closed_at"] = datetime.now(timezone.utc).isoformat()
-        updates["cerrada_por_id"] = auth["user_id"]
+        incidencia.closed_at = datetime.now(timezone.utc)
+        incidencia.cerrada_por_id = auth["user_id"]
     
-    await db.incidencias.update_one(
-        {"id": incidencia_id},
-        {"$set": updates}
-    )
+    await db.commit()
     
-    updated = await db.incidencias.find_one({"id": incidencia_id}, {"_id": 0})
-    return updated
+    return {
+        "id": incidencia.id, "tenant_id": incidencia.tenant_id, "titulo": incidencia.titulo,
+        "descripcion": incidencia.descripcion, "ubicacion": incidencia.ubicacion,
+        "prioridad": incidencia.prioridad, "estado": incidencia.estado, "categoria": incidencia.categoria,
+        "notas": incidencia.notas, "updated_at": incidencia.updated_at.isoformat() if incidencia.updated_at else None
+    }
 
 # ============================================================
-# COMUNICADOS ENDPOINTS (PROTECTED + TENANT FILTERED)
+# COMUNICADOS ENDPOINTS
 # ============================================================
 
 @api_router.get("/comunicados")
-async def get_comunicados(auth: Dict = Depends(get_current_user)):
+async def get_comunicados(auth: Dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Get comunicados filtered by tenant"""
-    comunicados = await db.comunicados.find(
-        {"tenant_id": auth["tenant_id"]},
-        {"_id": 0}
-    ).sort("created_at", -1).to_list(100)
+    result = await db.execute(
+        select(ComunicadoModel)
+        .where(ComunicadoModel.tenant_id == auth["tenant_id"])
+        .order_by(ComunicadoModel.created_at.desc())
+    )
+    comunicados = result.scalars().all()
     
-    return {"comunicados": comunicados}
+    return {"comunicados": [
+        {"id": c.id, "tenant_id": c.tenant_id, "titulo": c.titulo, "mensaje": c.mensaje,
+         "canal": c.canal, "destinatarios_count": c.destinatarios_count, "estado": c.estado,
+         "enviado_at": c.enviado_at.isoformat() if c.enviado_at else None,
+         "created_at": c.created_at.isoformat() if c.created_at else None}
+        for c in comunicados
+    ]}
 
 @api_router.post("/comunicados")
-async def create_comunicado(
-    data: ComunicadoCreate,
-    auth: Dict = Depends(get_current_user)
-):
-    """Create and optionally send comunicado"""
-    comunicado = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": auth["tenant_id"],
-        "titulo": data.titulo,
-        "mensaje": data.mensaje,
-        "canal": data.canal,
-        "destinatarios_count": 0,
-        "estado": "borrador",
-        "enviado_at": None,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
+async def create_comunicado(data: ComunicadoCreate, auth: Dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Create comunicado"""
+    comunicado = ComunicadoModel(
+        id=str(uuid.uuid4()),
+        tenant_id=auth["tenant_id"],
+        titulo=data.titulo,
+        mensaje=data.mensaje,
+        canal=data.canal
+    )
     
-    await db.comunicados.insert_one(comunicado)
-    if "_id" in comunicado:
-        del comunicado["_id"]
-    return comunicado
+    db.add(comunicado)
+    await db.commit()
+    
+    return {
+        "id": comunicado.id, "tenant_id": comunicado.tenant_id, "titulo": comunicado.titulo,
+        "mensaje": comunicado.mensaje, "canal": comunicado.canal, "destinatarios_count": 0,
+        "estado": "borrador", "created_at": comunicado.created_at.isoformat() if comunicado.created_at else None
+    }
 
 @api_router.post("/comunicados/{comunicado_id}/send")
-async def send_comunicado(
-    comunicado_id: str,
-    auth: Dict = Depends(get_current_user)
-):
-    """Send comunicado (mock n8n)"""
-    comunicado = await db.comunicados.find_one(
-        {"id": comunicado_id, "tenant_id": auth["tenant_id"]}
+async def send_comunicado(comunicado_id: str, auth: Dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Send comunicado"""
+    result = await db.execute(
+        select(ComunicadoModel).where(
+            and_(ComunicadoModel.id == comunicado_id, ComunicadoModel.tenant_id == auth["tenant_id"])
+        )
     )
+    comunicado = result.scalar_one_or_none()
     if not comunicado:
         raise HTTPException(status_code=404, detail="Comunicado no encontrado")
     
-    # Mock send
-    await asyncio.sleep(1)  # Simulate n8n delay
+    await asyncio.sleep(1)
     
-    await db.comunicados.update_one(
-        {"id": comunicado_id},
-        {"$set": {
-            "estado": "enviado",
-            "destinatarios_count": 150 + (hash(comunicado_id) % 200),
-            "enviado_at": datetime.now(timezone.utc).isoformat()
-        }}
-    )
+    comunicado.estado = "enviado"
+    comunicado.destinatarios_count = 150 + (hash(comunicado_id) % 200)
+    comunicado.enviado_at = datetime.now(timezone.utc)
+    await db.commit()
     
-    updated = await db.comunicados.find_one({"id": comunicado_id}, {"_id": 0})
-    return updated
+    return {
+        "id": comunicado.id, "titulo": comunicado.titulo, "estado": comunicado.estado,
+        "destinatarios_count": comunicado.destinatarios_count,
+        "enviado_at": comunicado.enviado_at.isoformat()
+    }
 
 # ============================================================
-# KPIs ENDPOINT (PROTECTED + TENANT FILTERED)
+# KPIs ENDPOINT
 # ============================================================
 
 @api_router.get("/kpis")
-async def get_kpis(auth: Dict = Depends(get_current_user)):
+async def get_kpis(auth: Dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Get KPIs for tenant"""
     tenant_id = auth["tenant_id"]
     
@@ -969,35 +1012,46 @@ async def get_kpis(auth: Dict = Depends(get_current_user)):
     hace_7_dias = hoy - timedelta(days=7)
     
     # Llamadas hoy
-    llamadas_hoy = await db.llamadas.count_documents({
-        "tenant_id": tenant_id,
-        "fecha": {"$gte": hoy.isoformat()}
-    })
+    result = await db.execute(
+        select(func.count()).select_from(LlamadaModel).where(
+            and_(LlamadaModel.tenant_id == tenant_id, LlamadaModel.fecha >= hoy)
+        )
+    )
+    llamadas_hoy = result.scalar()
     
     # Llamadas semana
-    llamadas_semana = await db.llamadas.count_documents({
-        "tenant_id": tenant_id,
-        "fecha": {"$gte": hace_7_dias.isoformat()}
-    })
+    result = await db.execute(
+        select(func.count()).select_from(LlamadaModel).where(
+            and_(LlamadaModel.tenant_id == tenant_id, LlamadaModel.fecha >= hace_7_dias)
+        )
+    )
+    llamadas_semana = result.scalar()
     
     # Incidencias abiertas
-    incidencias_abiertas = await db.incidencias.count_documents({
-        "tenant_id": tenant_id,
-        "estado": {"$ne": "cerrada"}
-    })
+    result = await db.execute(
+        select(func.count()).select_from(IncidenciaModel).where(
+            and_(IncidenciaModel.tenant_id == tenant_id, IncidenciaModel.estado != "cerrada")
+        )
+    )
+    incidencias_abiertas = result.scalar()
     
     # Incidencias cerradas semana
-    incidencias_cerradas = await db.incidencias.count_documents({
-        "tenant_id": tenant_id,
-        "closed_at": {"$gte": hace_7_dias.isoformat()}
-    })
+    result = await db.execute(
+        select(func.count()).select_from(IncidenciaModel).where(
+            and_(IncidenciaModel.tenant_id == tenant_id, IncidenciaModel.closed_at >= hace_7_dias)
+        )
+    )
+    incidencias_cerradas = result.scalar()
     
     # Comunicados semana
-    comunicados_semana = await db.comunicados.count_documents({
-        "tenant_id": tenant_id,
-        "estado": "enviado",
-        "enviado_at": {"$gte": hace_7_dias.isoformat()}
-    })
+    result = await db.execute(
+        select(func.count()).select_from(ComunicadoModel).where(
+            and_(ComunicadoModel.tenant_id == tenant_id,
+                 ComunicadoModel.estado == "enviado",
+                 ComunicadoModel.enviado_at >= hace_7_dias)
+        )
+    )
+    comunicados_semana = result.scalar()
     
     return {
         "llamadas_hoy": llamadas_hoy,
@@ -1009,7 +1063,7 @@ async def get_kpis(auth: Dict = Depends(get_current_user)):
     }
 
 # ============================================================
-# ONYX CHAT (PUBLIC - but tenant aware)
+# ONYX CHAT
 # ============================================================
 
 SANTA_GADEA_MOCK = {
@@ -1030,10 +1084,7 @@ def get_mock_response(message: str) -> str:
     return SANTA_GADEA_MOCK["default"]
 
 @api_router.post("/onyx-chat")
-async def onyx_chat(
-    request: OnyxChatRequest,
-    auth: Optional[Dict] = Depends(get_optional_user)
-):
+async def onyx_chat(request: OnyxChatRequest, auth: Optional[Dict] = Depends(get_optional_user)):
     """Onyx chat proxy with mock fallback"""
     last_message = ""
     for msg in reversed(request.messages):
@@ -1041,8 +1092,7 @@ async def onyx_chat(
             last_message = msg.content
             break
     
-    # Mock response
-    await asyncio.sleep(0.5)  # Simulate API delay
+    await asyncio.sleep(0.5)
     return {
         "response": get_mock_response(last_message),
         "source": "mock",
@@ -1065,9 +1115,9 @@ app.include_router(api_router)
 
 @app.on_event("startup")
 async def startup_db_client():
-    logger.info("Starting up...")
+    logger.info("Starting up with PostgreSQL...")
     await seed_database()
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    client.close()
+    await engine.dispose()
