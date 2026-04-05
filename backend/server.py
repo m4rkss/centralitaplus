@@ -42,7 +42,15 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # PostgreSQL connection
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+asyncpg://centralita:centralita123@localhost:5432/centralita_db")
 
-engine = create_async_engine(DATABASE_URL, echo=False)
+# Configure engine for Supabase pooler (pgbouncer) - disable prepared statements
+engine = create_async_engine(
+    DATABASE_URL, 
+    echo=False,
+    connect_args={
+        "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
+    }
+)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 # Security
