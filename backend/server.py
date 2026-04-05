@@ -16,6 +16,8 @@ import json
 import asyncio
 import jwt
 from passlib.context import CryptContext
+import resend
+import secrets
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -24,6 +26,10 @@ load_dotenv(ROOT_DIR / '.env')
 JWT_SECRET = os.environ.get("JWT_SECRET", "centralita-virtual-secret-key-2026")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
+
+# Resend email
+resend.api_key = os.environ.get("RESEND_API_KEY")
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev")
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -159,6 +165,14 @@ class AdminUserUpdate(BaseModel):
     password: Optional[str] = None
     rol: Optional[str] = None
     nombre: Optional[str] = None
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+    tenant_id: Optional[str] = None
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
 
 class ChatMessage(BaseModel):
     role: str
@@ -530,6 +544,97 @@ async def get_current_user_info(auth: Dict = Depends(get_current_user)):
 async def logout():
     """Logout (client-side token removal)"""
     return {"message": "Sesión cerrada correctamente"}
+
+@api_router.post("/auth/password-reset/request")
+async def request_password_reset(data: PasswordResetRequest, request: Request):
+    """Send password reset email with a 6-digit code"""
+    tenant_id = data.tenant_id or get_tenant_from_request(request)
+
+    user = await db.users.find_one(
+        {"email": data.email, "tenant_id": tenant_id},
+        {"_id": 0}
+    )
+
+    # Always return success to not leak user existence
+    if not user:
+        logger.info(f"Password reset requested for unknown email: {data.email}")
+        return {"message": "Si el email existe, recibirás un correo con instrucciones"}
+
+    # Generate 6-digit code and store it
+    code = f"{secrets.randbelow(900000) + 100000}"
+    expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+
+    await db.password_resets.delete_many({"email": data.email, "tenant_id": tenant_id})
+    await db.password_resets.insert_one({
+        "email": data.email,
+        "tenant_id": tenant_id,
+        "token": code,
+        "expires_at": expires.isoformat(),
+        "used": False
+    })
+
+    # Get tenant name for email
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+    tenant_name = tenant["nombre"] if tenant else "Centralita Virtual"
+
+    # Send email via Resend
+    html_content = f"""
+    <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#0f172a;border-radius:12px;color:#e2e8f0;">
+      <h2 style="color:#fff;margin:0 0 8px;">Restablecer contraseña</h2>
+      <p style="color:#94a3b8;margin:0 0 24px;font-size:14px;">{tenant_name}</p>
+      <p style="color:#cbd5e1;font-size:14px;">Usa el siguiente código para restablecer tu contraseña. Expira en 15 minutos.</p>
+      <div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:20px;text-align:center;margin:24px 0;">
+        <span style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#3b82f6;">{code}</span>
+      </div>
+      <p style="color:#64748b;font-size:12px;margin:0;">Si no solicitaste este cambio, ignora este email.</p>
+    </div>
+    """
+
+    try:
+        await asyncio.to_thread(resend.Emails.send, {
+            "from": SENDER_EMAIL,
+            "to": [data.email],
+            "subject": f"Código de recuperación - {tenant_name}",
+            "html": html_content
+        })
+        logger.info(f"Password reset email sent to {data.email}")
+    except Exception as e:
+        logger.error(f"Failed to send reset email: {e}")
+        raise HTTPException(status_code=500, detail="Error al enviar el email. Inténtalo de nuevo.")
+
+    return {"message": "Si el email existe, recibirás un correo con instrucciones"}
+
+@api_router.post("/auth/password-reset/confirm")
+async def confirm_password_reset(data: PasswordResetConfirm):
+    """Verify code and reset password"""
+    reset = await db.password_resets.find_one(
+        {"token": data.token, "used": False},
+        {"_id": 0}
+    )
+
+    if not reset:
+        raise HTTPException(status_code=400, detail="Código inválido o ya utilizado")
+
+    if datetime.fromisoformat(reset["expires_at"]) < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="El código ha expirado. Solicita uno nuevo.")
+
+    if len(data.new_password) < 4:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 4 caracteres")
+
+    # Update password
+    await db.users.update_one(
+        {"email": reset["email"], "tenant_id": reset["tenant_id"]},
+        {"$set": {"password_hash": hash_password(data.new_password)}}
+    )
+
+    # Mark token as used
+    await db.password_resets.update_one(
+        {"token": data.token},
+        {"$set": {"used": True}}
+    )
+
+    logger.info(f"Password reset completed for {reset['email']}")
+    return {"message": "Contraseña actualizada correctamente"}
 
 # ============================================================
 # ADMIN: USER MANAGEMENT (Admin only)
