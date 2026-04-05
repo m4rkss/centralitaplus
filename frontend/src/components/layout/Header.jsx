@@ -1,6 +1,7 @@
 import { useTenantStore, useAuthStore, useDataStore } from '@/stores/useTenantStore';
-import { Bell, Search, User, ChevronDown, LogOut } from 'lucide-react';
+import { Search, User, ChevronDown, LogOut } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { NotificationPanel } from '@/components/notifications';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -62,13 +63,7 @@ export function Header({ isMobile = false }) {
         </button>
 
         {/* Notificaciones */}
-        <button 
-          data-testid="notifications-btn"
-          className="relative p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-        >
-          <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-        </button>
+        <NotificationPanel />
 
         {/* Usuario */}
         <DropdownMenu>
