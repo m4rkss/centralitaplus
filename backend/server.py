@@ -491,7 +491,7 @@ async def seed_database():
 async def login(credentials: UserLogin, request: Request):
     """Login and get JWT token"""
     # Get tenant from request or credentials
-    tenant_id = credentials.tenant_id or get_tenant_from_request(request)
+    tenant_id = credentials.tenant_id or extract_tenant_from_host(request.headers.get("host", ""))
     
     logger.info(f"Login attempt: {credentials.email} for tenant: {tenant_id}")
     
