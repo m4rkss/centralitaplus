@@ -3,7 +3,7 @@ import { useTenantStore, useDataStore } from '@/stores/useTenantStore';
 import { formatDateTime, STATUS_COLORS, generateId, cn } from '@/lib/utils';
 import { 
   Plus, Search, Mail, MessageSquare, Send, Clock, Users, 
-  Eye, CheckCircle, AlertCircle
+  Eye, CheckCircle, AlertCircle, Loader2
 } from 'lucide-react';
 import {
   Dialog,
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
 
 const canalIcons = {
   whatsapp: MessageSquare,
@@ -69,13 +70,14 @@ function ComunicadoCard({ comunicado, onClick }) {
 
 export default function Comunicados() {
   const { subdomain } = useTenantStore();
-  const { comunicados, fetchComunicados, createComunicado, sendComunicado, isLoading } = useDataStore();
+  const { comunicados, fetchComunicados, createComunicado, enviarComunicado, isLoading } = useDataStore();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [search, setSearch] = useState('');
   const [showNewForm, setShowNewForm] = useState(false);
   const [selectedComunicado, setSelectedComunicado] = useState(null);
   const [sending, setSending] = useState(false);
+  const [validationErrors, setValidationErrors] = useState({});
 
   const [newComunicado, setNewComunicado] = useState({
     titulo: '',
@@ -101,36 +103,95 @@ export default function Comunicados() {
     c.mensaje.toLowerCase().includes(search.toLowerCase())
   );
 
+  // Validate form fields
+  const validateForm = () => {
+    const errors = {};
+    
+    if (!newComunicado.titulo.trim()) {
+      errors.titulo = 'El título es obligatorio';
+    } else if (newComunicado.titulo.length > 255) {
+      errors.titulo = 'El título no puede superar 255 caracteres';
+    }
+    
+    if (!newComunicado.mensaje.trim()) {
+      errors.mensaje = 'El mensaje es obligatorio';
+    } else if (newComunicado.mensaje.length > 2000) {
+      errors.mensaje = 'El mensaje no puede superar 2000 caracteres';
+    }
+    
+    if (!['whatsapp', 'email', 'ambos'].includes(newComunicado.canal)) {
+      errors.canal = 'Selecciona un canal válido';
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const handleSendComunicado = async () => {
-    if (!newComunicado.titulo || !newComunicado.mensaje) return;
+    // Validate before sending
+    if (!validateForm()) {
+      toast.error('Por favor, corrige los errores del formulario');
+      return;
+    }
     
     setSending(true);
+    setValidationErrors({});
     
     try {
-      await createComunicado(newComunicado);
-      setSending(false);
-      setShowNewForm(false);
-      setNewComunicado({
-        titulo: '',
-        mensaje: '',
-        canal: 'whatsapp'
-      });
+      const result = await enviarComunicado(newComunicado);
+      
+      if (result.success) {
+        toast.success('Comunicado enviado correctamente', {
+          description: result.data?.message || `Se ha iniciado el envío por ${newComunicado.canal}`
+        });
+        
+        setShowNewForm(false);
+        setNewComunicado({
+          titulo: '',
+          mensaje: '',
+          canal: 'whatsapp'
+        });
+      } else {
+        toast.error('Error al enviar el comunicado', {
+          description: result.error || 'Inténtalo de nuevo más tarde'
+        });
+      }
     } catch (error) {
-      setSending(false);
       console.error('Error sending comunicado:', error);
+      toast.error('Error de conexión', {
+        description: 'No se pudo conectar con el servidor'
+      });
+    } finally {
+      setSending(false);
     }
   };
 
   const handleSaveDraft = async () => {
-    if (!newComunicado.titulo) return;
+    if (!newComunicado.titulo.trim()) {
+      setValidationErrors({ titulo: 'El título es obligatorio para guardar' });
+      return;
+    }
     
     try {
-      await createComunicado(newComunicado);
-      setShowNewForm(false);
-      setNewComunicado({ titulo: '', mensaje: '', canal: 'whatsapp' });
+      const result = await createComunicado(newComunicado);
+      if (result) {
+        toast.success('Borrador guardado', {
+          description: 'Puedes editarlo y enviarlo más tarde'
+        });
+        setShowNewForm(false);
+        setNewComunicado({ titulo: '', mensaje: '', canal: 'whatsapp' });
+        setValidationErrors({});
+      }
     } catch (error) {
       console.error('Error saving draft:', error);
+      toast.error('Error al guardar borrador');
     }
+  };
+
+  const handleCloseModal = () => {
+    setShowNewForm(false);
+    setValidationErrors({});
+    setNewComunicado({ titulo: '', mensaje: '', canal: 'whatsapp' });
   };
 
   return (
@@ -205,7 +266,7 @@ export default function Comunicados() {
       </div>
 
       {/* Modal Nuevo Comunicado */}
-      <Dialog open={showNewForm} onOpenChange={setShowNewForm}>
+      <Dialog open={showNewForm} onOpenChange={handleCloseModal}>
         <DialogContent className="bg-slate-900 border-slate-800 max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-white">Nuevo Comunicado</DialogTitle>
@@ -217,10 +278,25 @@ export default function Comunicados() {
               <Input
                 data-testid="input-titulo-comunicado"
                 value={newComunicado.titulo}
-                onChange={(e) => setNewComunicado(prev => ({ ...prev, titulo: e.target.value }))}
+                onChange={(e) => {
+                  setNewComunicado(prev => ({ ...prev, titulo: e.target.value }));
+                  if (validationErrors.titulo) {
+                    setValidationErrors(prev => ({ ...prev, titulo: null }));
+                  }
+                }}
                 placeholder="Ej: Aviso corte de agua"
-                className="mt-1 bg-slate-800 border-slate-700 text-white"
+                className={cn(
+                  "mt-1 bg-slate-800 border-slate-700 text-white",
+                  validationErrors.titulo && "border-red-500 focus:ring-red-500"
+                )}
+                disabled={sending}
               />
+              {validationErrors.titulo && (
+                <p className="text-xs text-red-400 mt-1 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  {validationErrors.titulo}
+                </p>
+              )}
             </div>
 
             <div>
@@ -233,11 +309,13 @@ export default function Comunicados() {
                     <button
                       key={canal}
                       onClick={() => setNewComunicado(prev => ({ ...prev, canal }))}
+                      disabled={sending}
                       className={cn(
                         "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border transition-all",
                         isSelected 
                           ? "bg-slate-700 border-slate-600 text-white" 
-                          : "bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-800"
+                          : "bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-800",
+                        sending && "opacity-50 cursor-not-allowed"
                       )}
                     >
                       <Icon className="w-4 h-4" />
@@ -253,12 +331,30 @@ export default function Comunicados() {
               <Textarea
                 data-testid="input-mensaje-comunicado"
                 value={newComunicado.mensaje}
-                onChange={(e) => setNewComunicado(prev => ({ ...prev, mensaje: e.target.value }))}
+                onChange={(e) => {
+                  setNewComunicado(prev => ({ ...prev, mensaje: e.target.value }));
+                  if (validationErrors.mensaje) {
+                    setValidationErrors(prev => ({ ...prev, mensaje: null }));
+                  }
+                }}
                 placeholder="Escribe el mensaje para los ciudadanos..."
                 rows={5}
-                className="mt-1 bg-slate-800 border-slate-700 text-white resize-none"
+                className={cn(
+                  "mt-1 bg-slate-800 border-slate-700 text-white resize-none",
+                  validationErrors.mensaje && "border-red-500 focus:ring-red-500"
+                )}
+                disabled={sending}
               />
-              <p className="text-xs text-slate-500 mt-1">{newComunicado.mensaje.length}/500 caracteres</p>
+              <div className="flex justify-between items-center mt-1">
+                {validationErrors.mensaje ? (
+                  <p className="text-xs text-red-400 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    {validationErrors.mensaje}
+                  </p>
+                ) : (
+                  <span className="text-xs text-slate-500">{newComunicado.mensaje.length}/2000 caracteres</span>
+                )}
+              </div>
             </div>
 
             {/* Preview */}
@@ -282,20 +378,20 @@ export default function Comunicados() {
             <div className="flex gap-3 pt-4">
               <button
                 onClick={handleSaveDraft}
-                disabled={!newComunicado.titulo}
-                className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800/50 text-white rounded-lg text-sm transition-colors"
+                disabled={!newComunicado.titulo.trim() || sending}
+                className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-800/50 disabled:cursor-not-allowed text-white rounded-lg text-sm transition-colors"
               >
                 Guardar borrador
               </button>
               <button
                 data-testid="send-comunicado"
                 onClick={handleSendComunicado}
-                disabled={!newComunicado.titulo || !newComunicado.mensaje || sending}
+                disabled={!newComunicado.titulo.trim() || !newComunicado.mensaje.trim() || sending}
                 className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
               >
                 {sending ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     Enviando...
                   </>
                 ) : (

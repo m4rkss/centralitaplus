@@ -10,7 +10,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 import uuid
 from datetime import datetime, timezone, timedelta
 import asyncio
@@ -18,6 +18,7 @@ import jwt
 from passlib.context import CryptContext
 import resend
 import secrets
+import httpx
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -30,6 +31,10 @@ JWT_EXPIRATION_HOURS = 24
 # Resend email
 resend.api_key = os.environ.get("RESEND_API_KEY")
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev")
+
+# n8n Webhook Configuration
+N8N_COMUNICADOS_WEBHOOK_URL = os.environ.get("N8N_COMUNICADOS_WEBHOOK_URL", "")
+N8N_WEBHOOK_TIMEOUT = int(os.environ.get("N8N_WEBHOOK_TIMEOUT", "30"))
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -176,6 +181,36 @@ class ComunicadoCreate(BaseModel):
     titulo: str
     mensaje: str
     canal: str = "whatsapp"
+
+# Request/Response models for n8n integration
+class ComunicadoEnviarRequest(BaseModel):
+    """Request body for sending comunicado via n8n"""
+    titulo: str = Field(..., min_length=1, max_length=255, description="Título del comunicado")
+    mensaje: str = Field(..., min_length=1, max_length=2000, description="Mensaje del comunicado")
+    canal: Literal["whatsapp", "email", "ambos"] = Field(default="whatsapp", description="Canal de envío")
+
+class ComunicadoEnviarResponse(BaseModel):
+    """Response from comunicado send endpoint"""
+    success: bool
+    comunicado_id: str
+    request_id: str
+    status: str  # pending, queued, sent, error
+    message: str
+    workflow_execution_id: Optional[str] = None
+    destinatarios_count: Optional[int] = None
+
+class N8NWebhookPayload(BaseModel):
+    """Payload sent to n8n webhook"""
+    tenant_id: str
+    municipio: str
+    comunicado_id: str
+    request_id: str
+    title: str
+    channel: str
+    message: str
+    created_by: str
+    source: str = "centralita-dashboard"
+    timestamp: str
 
 class AdminUserCreate(BaseModel):
     email: EmailStr
@@ -998,6 +1033,203 @@ async def send_comunicado(comunicado_id: str, auth: Dict = Depends(get_current_u
         "destinatarios_count": comunicado.destinatarios_count,
         "enviado_at": comunicado.enviado_at.isoformat()
     }
+
+@api_router.post("/comunicados/enviar", response_model=ComunicadoEnviarResponse)
+async def enviar_comunicado_n8n(
+    data: ComunicadoEnviarRequest,
+    auth: Dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Create and send comunicado via n8n webhook.
+    
+    Flow:
+    1. Validate request data
+    2. Create comunicado in database with 'en_proceso' status
+    3. Call n8n webhook with payload
+    4. Update comunicado status based on n8n response
+    5. Return result to frontend
+    """
+    request_id = f"req-{uuid.uuid4().hex[:12]}"
+    tenant_id = auth["tenant_id"]
+    user = auth["user"]
+    
+    logger.info(f"[{request_id}] Sending comunicado via n8n: {data.titulo}")
+    
+    # Validate n8n webhook URL
+    if not N8N_COMUNICADOS_WEBHOOK_URL:
+        logger.warning(f"[{request_id}] N8N_COMUNICADOS_WEBHOOK_URL not configured - using mock mode")
+    
+    # Get tenant info for municipio name
+    result = await db.execute(
+        select(TenantModel).where(TenantModel.id == tenant_id)
+    )
+    tenant = result.scalar_one_or_none()
+    municipio = tenant.nombre if tenant else "Municipio"
+    
+    # Create comunicado in database with 'en_proceso' status
+    comunicado = ComunicadoModel(
+        id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
+        titulo=data.titulo,
+        mensaje=data.mensaje,
+        canal=data.canal,
+        estado="en_proceso",
+        destinatarios_count=0
+    )
+    db.add(comunicado)
+    await db.commit()
+    await db.refresh(comunicado)
+    
+    logger.info(f"[{request_id}] Created comunicado {comunicado.id} with status 'en_proceso'")
+    
+    # Prepare n8n webhook payload
+    n8n_payload = {
+        "tenant_id": tenant_id,
+        "municipio": municipio,
+        "comunicado_id": comunicado.id,
+        "request_id": request_id,
+        "title": data.titulo,
+        "channel": data.canal,
+        "message": data.mensaje,
+        "created_by": user.email,
+        "source": "centralita-dashboard",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    
+    # If webhook URL is not configured, use mock mode
+    if not N8N_COMUNICADOS_WEBHOOK_URL:
+        logger.info(f"[{request_id}] Mock mode: simulating n8n webhook call")
+        await asyncio.sleep(1)  # Simulate network delay
+        
+        # Mock successful response
+        mock_destinatarios = 100 + (hash(comunicado.id) % 200)
+        comunicado.estado = "enviado"
+        comunicado.destinatarios_count = mock_destinatarios
+        comunicado.enviado_at = datetime.now(timezone.utc)
+        await db.commit()
+        
+        return ComunicadoEnviarResponse(
+            success=True,
+            comunicado_id=comunicado.id,
+            request_id=request_id,
+            status="sent",
+            message="Comunicado enviado correctamente (modo simulación)",
+            workflow_execution_id=f"mock-{uuid.uuid4().hex[:8]}",
+            destinatarios_count=mock_destinatarios
+        )
+    
+    # Call n8n webhook
+    try:
+        async with httpx.AsyncClient(timeout=N8N_WEBHOOK_TIMEOUT) as client:
+            logger.info(f"[{request_id}] Calling n8n webhook: {N8N_COMUNICADOS_WEBHOOK_URL}")
+            
+            response = await client.post(
+                N8N_COMUNICADOS_WEBHOOK_URL,
+                json=n8n_payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Request-ID": request_id,
+                    "X-Source": "centralita-dashboard"
+                }
+            )
+            
+            logger.info(f"[{request_id}] n8n response status: {response.status_code}")
+            
+            if response.status_code >= 200 and response.status_code < 300:
+                # Parse n8n response
+                try:
+                    n8n_response = response.json()
+                except Exception:
+                    n8n_response = {"status": "queued"}
+                
+                workflow_execution_id = n8n_response.get("workflowExecutionId") or n8n_response.get("executionId")
+                n8n_status = n8n_response.get("status", "queued")
+                destinatarios = n8n_response.get("destinatarios_count", 0)
+                
+                # Update comunicado status based on n8n response
+                if n8n_status in ["sent", "completed", "success"]:
+                    comunicado.estado = "enviado"
+                    comunicado.enviado_at = datetime.now(timezone.utc)
+                else:
+                    comunicado.estado = "en_proceso"
+                
+                if destinatarios:
+                    comunicado.destinatarios_count = destinatarios
+                    
+                await db.commit()
+                
+                logger.info(f"[{request_id}] Comunicado {comunicado.id} updated to status '{comunicado.estado}'")
+                
+                return ComunicadoEnviarResponse(
+                    success=True,
+                    comunicado_id=comunicado.id,
+                    request_id=request_id,
+                    status=n8n_status,
+                    message=n8n_response.get("message", "Comunicado enviado al workflow"),
+                    workflow_execution_id=workflow_execution_id,
+                    destinatarios_count=destinatarios or None
+                )
+            else:
+                # n8n returned error status
+                error_msg = f"n8n webhook returned status {response.status_code}"
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get("message", error_msg)
+                except Exception:
+                    pass
+                
+                logger.error(f"[{request_id}] n8n error: {error_msg}")
+                
+                comunicado.estado = "error"
+                await db.commit()
+                
+                return ComunicadoEnviarResponse(
+                    success=False,
+                    comunicado_id=comunicado.id,
+                    request_id=request_id,
+                    status="error",
+                    message=f"Error del workflow: {error_msg}"
+                )
+                
+    except httpx.TimeoutException:
+        logger.error(f"[{request_id}] n8n webhook timeout after {N8N_WEBHOOK_TIMEOUT}s")
+        comunicado.estado = "error"
+        await db.commit()
+        
+        return ComunicadoEnviarResponse(
+            success=False,
+            comunicado_id=comunicado.id,
+            request_id=request_id,
+            status="error",
+            message=f"Timeout: el webhook no respondió en {N8N_WEBHOOK_TIMEOUT} segundos"
+        )
+        
+    except httpx.ConnectError as e:
+        logger.error(f"[{request_id}] n8n webhook connection error: {e}")
+        comunicado.estado = "error"
+        await db.commit()
+        
+        return ComunicadoEnviarResponse(
+            success=False,
+            comunicado_id=comunicado.id,
+            request_id=request_id,
+            status="error",
+            message="No se pudo conectar con el servicio de envío"
+        )
+        
+    except Exception as e:
+        logger.error(f"[{request_id}] Unexpected error calling n8n: {e}")
+        comunicado.estado = "error"
+        await db.commit()
+        
+        return ComunicadoEnviarResponse(
+            success=False,
+            comunicado_id=comunicado.id,
+            request_id=request_id,
+            status="error",
+            message="Error inesperado al procesar el comunicado"
+        )
 
 # ============================================================
 # KPIs ENDPOINT

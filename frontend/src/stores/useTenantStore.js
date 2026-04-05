@@ -394,6 +394,48 @@ export const useDataStore = create((set, get) => ({
     return null;
   },
 
+  // Send comunicado via n8n webhook
+  enviarComunicado: async (comunicado) => {
+    const { getAuthHeaders } = useAuthStore.getState();
+    const { subdomain } = useTenantStore.getState();
+    
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/comunicados/enviar`, {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json',
+          'X-Tenant-ID': subdomain
+        },
+        body: JSON.stringify({
+          titulo: comunicado.titulo,
+          mensaje: comunicado.mensaje,
+          canal: comunicado.canal
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Fetch updated comunicados list
+        const { fetchComunicados } = get();
+        await fetchComunicados();
+        return { success: true, data: result };
+      } else {
+        return { 
+          success: false, 
+          error: result.message || 'Error al enviar el comunicado'
+        };
+      }
+    } catch (error) {
+      console.error('Error sending comunicado:', error);
+      return { 
+        success: false, 
+        error: error.message || 'Error de conexión'
+      };
+    }
+  },
+
   // Send comunicado
   sendComunicado: async (id) => {
     const { getAuthHeaders } = useAuthStore.getState();
