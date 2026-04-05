@@ -2,10 +2,12 @@ import { useNavigate } from 'react-router-dom';
 import { useTenantStore } from '@/stores/useTenantStore';
 import { 
   useNotificationStore, 
-  NOTIFICATION_CONFIG, 
+  NOTIFICATION_CONFIG,
+  NOTIFICATION_TYPES, 
   PRIORITY,
   formatRelativeTime 
 } from '@/stores/useNotificationStore';
+import { usePushNotifications, createPushContent } from '@/hooks/usePushNotifications';
 import { 
   Popover, 
   PopoverContent, 
@@ -27,9 +29,12 @@ import {
   FileText,
   Check,
   BellOff,
-  X
+  X,
+  BellRing,
+  Zap
 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
 
 // Icon mapping
 const IconMap = {
@@ -165,8 +170,11 @@ export function NotificationPanel() {
     getFilteredNotifications,
     getUnreadCount,
     markAllAsRead,
-    initNotifications
+    initNotifications,
+    addNotification,
+    pushEnabled
   } = useNotificationStore();
+  const { permission, showNotification, requestPermission } = usePushNotifications();
   
   const tenantId = currentTenant?.id || 'santa-gadea';
   
@@ -184,6 +192,42 @@ export function NotificationPanel() {
   };
   
   const handleClose = () => setOpen(false);
+  
+  // Test push notification
+  const handleTestPush = useCallback(async (e) => {
+    e.stopPropagation();
+    
+    // Request permission if not granted
+    if (permission !== 'granted') {
+      const result = await requestPermission();
+      if (result !== 'granted') {
+        toast.error('Permiso de notificaciones denegado');
+        return;
+      }
+    }
+    
+    // Create test notification
+    const testNotification = {
+      tenantId,
+      type: NOTIFICATION_TYPES.LLAMADA_DERIVADA,
+      title: 'Prueba de notificación push',
+      message: 'Esta es una notificación de prueba. ¡Las notificaciones push funcionan!',
+      priority: PRIORITY.HIGH,
+      link: '/llamadas',
+      relatedEntityId: 'test-001',
+      relatedEntityType: 'llamada',
+    };
+    
+    // Add to store
+    const newNotif = addNotification(testNotification);
+    
+    // Show push notification
+    if (permission === 'granted') {
+      const pushContent = createPushContent(newNotif);
+      await showNotification(pushContent.title, pushContent);
+      toast.success('Notificación push enviada');
+    }
+  }, [tenantId, permission, requestPermission, addNotification, showNotification]);
   
   return (
     <Popover open={isOpen} onOpenChange={setOpen}>
@@ -233,6 +277,16 @@ export function NotificationPanel() {
           </div>
           
           <div className="flex items-center gap-1">
+            {/* Test Push Button */}
+            <button
+              onClick={handleTestPush}
+              data-testid="test-push-btn"
+              title="Enviar notificación push de prueba"
+              className="text-xs text-amber-400 hover:text-amber-300 px-2 py-1 rounded hover:bg-amber-500/10 transition-colors"
+            >
+              <Zap className="w-3.5 h-3.5 inline mr-1" />
+              Test
+            </button>
             {unreadCount > 0 && (
               <button
                 onClick={handleMarkAllRead}

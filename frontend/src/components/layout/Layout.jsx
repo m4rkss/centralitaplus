@@ -3,6 +3,7 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { useEffect, useState } from 'react';
 import { useTenantStore } from '@/stores/useTenantStore';
+import { PushNotificationBanner } from '@/components/notifications';
 import { Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -66,6 +67,9 @@ export function Layout() {
           <Outlet />
         </main>
       </div>
+      
+      {/* Push notification permission banner */}
+      <PushNotificationBanner />
     </div>
   );
 }

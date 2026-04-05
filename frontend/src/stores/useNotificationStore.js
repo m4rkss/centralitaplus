@@ -233,6 +233,7 @@ export const useNotificationStore = create(
       isOpen: false,
       activeFilter: 'all', // 'all', 'unread', 'urgent'
       initialized: false,
+      pushEnabled: false, // Push notifications toggle
 
       // Initialize notifications for tenant
       initNotifications: (tenantId = 'santa-gadea') => {
@@ -253,6 +254,9 @@ export const useNotificationStore = create(
 
       // Set active filter
       setFilter: (filter) => set({ activeFilter: filter }),
+
+      // Push notifications toggle
+      setPushEnabled: (enabled) => set({ pushEnabled: enabled }),
 
       // Get filtered notifications
       getFilteredNotifications: (tenantId) => {
@@ -293,8 +297,8 @@ export const useNotificationStore = create(
         }));
       },
 
-      // Add new notification
-      addNotification: (notification) => {
+      // Add new notification (with optional push)
+      addNotification: (notification, triggerPush = true) => {
         const newNotification = {
           ...notification,
           id: `notif-${Date.now()}`,
@@ -304,6 +308,9 @@ export const useNotificationStore = create(
         set((state) => ({
           notifications: [newNotification, ...state.notifications]
         }));
+        
+        // Return the new notification for push handling
+        return newNotification;
       },
 
       // Remove notification
@@ -324,7 +331,8 @@ export const useNotificationStore = create(
       name: 'centralita-notifications',
       partialize: (state) => ({ 
         notifications: state.notifications,
-        initialized: state.initialized 
+        initialized: state.initialized,
+        pushEnabled: state.pushEnabled
       }),
     }
   )

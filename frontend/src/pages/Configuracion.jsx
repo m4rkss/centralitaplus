@@ -1,5 +1,6 @@
 import { useTenantStore } from '@/stores/useTenantStore';
 import { TENANTS } from '@/data/mockSantaGadea';
+import { PushNotificationStatus } from '@/components/notifications';
 import { Building2, Palette, Database, Bell, Users, Shield, Save } from 'lucide-react';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -163,28 +164,40 @@ export default function Configuracion() {
           </div>
           
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-white">Email de incidencias</p>
-                <p className="text-xs text-slate-400">Recibir alertas de nuevas incidencias</p>
-              </div>
-              <Switch defaultChecked />
+            {/* Push notifications control */}
+            <div>
+              <Label className="text-slate-300 mb-2 block">Notificaciones Push del Navegador</Label>
+              <PushNotificationStatus />
             </div>
             
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-white">Resumen diario</p>
-                <p className="text-xs text-slate-400">Informe automático cada mañana</p>
+            <div className="border-t border-slate-800 pt-4">
+              <Label className="text-slate-300 mb-3 block">Preferencias de alertas</Label>
+              
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-white">Email de incidencias</p>
+                    <p className="text-xs text-slate-400">Recibir alertas de nuevas incidencias</p>
+                  </div>
+                  <Switch defaultChecked />
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-white">Resumen diario</p>
+                    <p className="text-xs text-slate-400">Informe automático cada mañana</p>
+                  </div>
+                  <Switch defaultChecked />
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-white">Llamadas en revisión</p>
+                    <p className="text-xs text-slate-400">Alertar cuando hay llamadas para revisar</p>
+                  </div>
+                  <Switch />
+                </div>
               </div>
-              <Switch defaultChecked />
-            </div>
-            
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-white">Llamadas en revisión</p>
-                <p className="text-xs text-slate-400">Alertar cuando hay llamadas para revisar</p>
-              </div>
-              <Switch />
             </div>
           </div>
         </section>
