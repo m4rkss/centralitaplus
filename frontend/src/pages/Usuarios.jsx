@@ -246,6 +246,9 @@ export default function Usuarios() {
             <DialogTitle data-testid="user-dialog-title">
               {editingUser ? 'Editar usuario' : 'Nuevo usuario'}
             </DialogTitle>
+            <p className="text-sm text-slate-400">
+              {editingUser ? 'Modifica los datos del usuario' : 'Añade un nuevo usuario a tu organización'}
+            </p>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 mt-2">
             <div>

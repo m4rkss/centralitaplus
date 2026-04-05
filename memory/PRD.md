@@ -126,10 +126,18 @@
 - `frontend/Dockerfile` — Multi-stage: build React + serve con Nginx en puerto 3000
 - `docker-compose.yml` — Orquestación MongoDB + Backend + Frontend
 
+### Gestión de Usuarios (Admin Only) ✅ (05/02/2026)
+- **Backend**: CRUD completo en `/api/admin/users` (GET, POST, PATCH, DELETE)
+- Protección por rol `admin` via dependency `require_admin`
+- Validaciones: email duplicado (409), rol inválido (400), no auto-eliminar (400)
+- **Frontend**: Página `/usuarios` con tabla, búsqueda, diálogo crear/editar
+- Sidebar: enlace "Usuarios" visible solo para admins
+- No-admins ven pantalla "Acceso restringido"
+- Tests: 100% backend (20/20) y frontend (all flows)
+
 ## Backlog (Priorizado)
 
 ### P1 - Importante
-- [ ] Registro de nuevos administradores (Admin only)
 - [ ] Reset de contraseña por email
 - [ ] Dashboard analytics avanzados
 - [ ] Exportación CSV/PDF
