@@ -7,8 +7,7 @@ export const TENANTS = {
     nombre: "Ayuntamiento de Santa Gadea del Cid",
     logo_url: null,
     config: {
-      vapi_enabled: true,
-      retell_enabled: true,
+      llamadas_ia_enabled: true,
       onyx_workspace_id: "ws_santagadea_001",
       n8n_webhook_url: "https://n8n.centralitaia.com/webhook/santagadea"
     },
@@ -21,8 +20,7 @@ export const TENANTS = {
     nombre: "Demo Centralita IA",
     logo_url: null,
     config: {
-      vapi_enabled: true,
-      retell_enabled: true,
+      llamadas_ia_enabled: true,
       onyx_workspace_id: "ws_demo_001",
       n8n_webhook_url: null
     },
@@ -75,7 +73,7 @@ const generarLlamadas = (tenantId) => {
       fecha: fecha.toISOString(),
       duracion_segundos: 30 + Math.floor(Math.random() * 270),
       descripcion: descripciones[i],
-      proveedor: i % 3 === 0 ? 'retell' : 'vapi',
+      proveedor: 'llamadas_ia',
       estado: i === 4 || i === 13 ? 'revision' : 'completada',
       telefono_origen: `+34 6${Math.floor(Math.random() * 100000000).toString().padStart(8, '0')}`,
       transcripcion: i === 0 ? `IA: Buenos días, Ayuntamiento de Santa Gadea, ¿en qué puedo ayudarle?
@@ -105,7 +103,7 @@ IA: A usted, que tenga buen día.` : null,
         fecha: fecha.toISOString(),
         duracion_segundos: 30 + Math.floor(Math.random() * 270),
         descripcion: descripciones[Math.floor(Math.random() * descripciones.length)],
-        proveedor: Math.random() > 0.5 ? 'vapi' : 'retell',
+        proveedor: 'llamadas_ia',
         estado: Math.random() > 0.9 ? 'revision' : 'completada',
         telefono_origen: `+34 6${Math.floor(Math.random() * 100000000).toString().padStart(8, '0')}`,
         transcripcion: null,
@@ -300,14 +298,7 @@ export const obtenerDatosGraficoSemanal = (tenantSubdomain) => {
       dia: dias[fecha.getDay()],
       fecha: fecha.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }),
       llamadas: llamadasDia,
-      vapi: llamadas.filter(l => {
-        const fechaLlamada = new Date(l.fecha);
-        return fechaLlamada >= fecha && fechaLlamada < siguienteDia && l.proveedor === 'vapi';
-      }).length,
-      retell: llamadas.filter(l => {
-        const fechaLlamada = new Date(l.fecha);
-        return fechaLlamada >= fecha && fechaLlamada < siguienteDia && l.proveedor === 'retell';
-      }).length
+      llamadasIA: llamadasDia
     });
   }
   

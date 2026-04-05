@@ -86,8 +86,7 @@ export default function Llamadas() {
             </SelectTrigger>
             <SelectContent className="bg-slate-800 border-slate-700">
               <SelectItem value="todos" className="text-white">Todos</SelectItem>
-              <SelectItem value="vapi" className="text-white">Vapi</SelectItem>
-              <SelectItem value="retell" className="text-white">Retell</SelectItem>
+              <SelectItem value="llamadas_ia" className="text-white">Llamadas IA</SelectItem>
             </SelectContent>
           </Select>
 
@@ -150,11 +149,8 @@ export default function Llamadas() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={cn(
-                      "px-2 py-1 rounded text-xs font-medium",
-                      llamada.proveedor === 'vapi' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'
-                    )}>
-                      {llamada.proveedor.toUpperCase()}
+                    <span className="px-2 py-1 rounded text-xs font-medium bg-blue-500/20 text-blue-400">
+                      Llamadas IA
                     </span>
                   </td>
                   <td className="px-4 py-3">

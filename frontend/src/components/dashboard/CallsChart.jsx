@@ -30,11 +30,7 @@ export function CallsChart({ data }) {
         <div className="flex items-center gap-4 text-xs">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-            <span className="text-slate-400">Vapi</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-purple-500"></div>
-            <span className="text-slate-400">Retell</span>
+            <span className="text-slate-400">Llamadas IA</span>
           </div>
         </div>
       </div>
@@ -46,13 +42,9 @@ export function CallsChart({ data }) {
             margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
           >
             <defs>
-              <linearGradient id="colorVapi" x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id="colorLlamadasIA" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
                 <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-              </linearGradient>
-              <linearGradient id="colorRetell" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/>
-                <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
@@ -72,21 +64,12 @@ export function CallsChart({ data }) {
             <Tooltip content={<CustomTooltip />} />
             <Area
               type="monotone"
-              dataKey="vapi"
-              name="Vapi"
+              dataKey="llamadasIA"
+              name="Llamadas IA"
               stroke="#3b82f6"
               strokeWidth={2}
               fillOpacity={1}
-              fill="url(#colorVapi)"
-            />
-            <Area
-              type="monotone"
-              dataKey="retell"
-              name="Retell"
-              stroke="#a855f7"
-              strokeWidth={2}
-              fillOpacity={1}
-              fill="url(#colorRetell)"
+              fill="url(#colorLlamadasIA)"
             />
           </AreaChart>
         </ResponsiveContainer>

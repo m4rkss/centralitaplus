@@ -7,8 +7,7 @@ export const TenantSchema = z.object({
   nombre: z.string(),
   logo_url: z.string().optional(),
   config: z.object({
-    vapi_enabled: z.boolean().default(true),
-    retell_enabled: z.boolean().default(true),
+    llamadas_ia_enabled: z.boolean().default(true),
     onyx_workspace_id: z.string().optional(),
     n8n_webhook_url: z.string().optional(),
   }),
@@ -23,7 +22,7 @@ export const LlamadaSchema = z.object({
   fecha: z.string(),
   duracion_segundos: z.number().int().min(0),
   descripcion: z.string(),
-  proveedor: z.enum(['vapi', 'retell']),
+  proveedor: z.enum(['llamadas_ia']),
   estado: z.enum(['completada', 'revision', 'fallida']),
   telefono_origen: z.string().optional(),
   transcripcion: z.string().optional(),

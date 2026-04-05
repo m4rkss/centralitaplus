@@ -124,18 +124,10 @@ export default function Configuracion() {
           <div className="space-y-4">
             <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg">
               <div>
-                <p className="text-sm font-medium text-white">Vapi Voice AI</p>
+                <p className="text-sm font-medium text-white">Llamadas IA</p>
                 <p className="text-xs text-slate-400">Llamadas entrantes con IA</p>
               </div>
-              <Switch checked={currentTenant?.config?.vapi_enabled} disabled />
-            </div>
-            
-            <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg">
-              <div>
-                <p className="text-sm font-medium text-white">Retell AI</p>
-                <p className="text-xs text-slate-400">Agente de voz alternativo</p>
-              </div>
-              <Switch checked={currentTenant?.config?.retell_enabled} disabled />
+              <Switch checked={currentTenant?.config?.llamadas_ia_enabled} disabled />
             </div>
             
             <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg">
