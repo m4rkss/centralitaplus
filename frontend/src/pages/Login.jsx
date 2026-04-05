@@ -8,6 +8,25 @@ import { Label } from '@/components/ui/label';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
+// Helper: XHR POST bypasses dev overlay fetch interception
+function xhrPost(url, body) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText);
+        resolve({ ok: xhr.status >= 200 && xhr.status < 300, data });
+      } catch {
+        resolve({ ok: false, data: { detail: 'Error de conexión' } });
+      }
+    };
+    xhr.onerror = () => reject(new Error('Error de red'));
+    xhr.send(JSON.stringify(body));
+  });
+}
+
 // Views: 'login' | 'reset-request' | 'reset-confirm' | 'reset-success'
 export default function Login() {
   const navigate = useNavigate();
@@ -61,15 +80,10 @@ export default function Login() {
     if (!resetEmail) { setResetError('Introduce tu email'); return; }
     setResetLoading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/password-reset/request`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: resetEmail, tenant_id: subdomain })
+      const { ok, data } = await xhrPost(`${BACKEND_URL}/api/auth/password-reset/request`, {
+        email: resetEmail, tenant_id: subdomain
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || 'Error al enviar');
-      }
+      if (!ok) throw new Error(data.detail || 'Error al enviar');
       setView('reset-confirm');
     } catch (err) {
       setResetError(err.message);
@@ -85,15 +99,10 @@ export default function Login() {
     if (newPassword.length < 4) { setResetError('La contraseña debe tener al menos 4 caracteres'); return; }
     setResetLoading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/password-reset/confirm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: resetCode, new_password: newPassword })
+      const { ok, data } = await xhrPost(`${BACKEND_URL}/api/auth/password-reset/confirm`, {
+        token: resetCode, new_password: newPassword
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || 'Error al restablecer');
-      }
+      if (!ok) throw new Error(data.detail || 'Error al restablecer');
       setView('reset-success');
     } catch (err) {
       setResetError(err.message);

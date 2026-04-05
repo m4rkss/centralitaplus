@@ -1,7 +1,43 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// Helper: XHR-based POST that bypasses fetch interception from dev overlay
+function xhrPost(url, body) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText);
+        resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data });
+      } catch {
+        resolve({ ok: false, status: xhr.status, data: { detail: 'Error de conexión' } });
+      }
+    };
+    xhr.onerror = () => reject(new Error('Error de red'));
+    xhr.send(JSON.stringify(body));
+  });
+}
+
+// Helper: XHR-based GET
+function xhrGet(url, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText);
+        resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data });
+      } catch {
+        resolve({ ok: false, status: xhr.status, data: {} });
+      }
+    };
+    xhr.onerror = () => reject(new Error('Error de red'));
+    xhr.send();
+  });
+}
 
 // Auth store
 export const useAuthStore = create(
@@ -18,18 +54,13 @@ export const useAuthStore = create(
         set({ isLoading: true, error: null });
         
         try {
-          const response = await fetch(`${BACKEND_URL}/api/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password, tenant_id: tenantId })
+          const { ok, data } = await xhrPost(`${BACKEND_URL}/api/auth/login`, {
+            email, password, tenant_id: tenantId
           });
 
-          if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || 'Error de autenticación');
+          if (!ok) {
+            throw new Error(data.detail || 'Error de autenticación');
           }
-
-          const data = await response.json();
           
           set({
             user: data.user,
@@ -69,20 +100,17 @@ export const useAuthStore = create(
         }
 
         try {
-          const response = await fetch(`${BACKEND_URL}/api/auth/me`, {
-            headers: { 
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
+          const { ok, data } = await xhrGet(`${BACKEND_URL}/api/auth/me`, {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
           });
 
-          if (!response.ok) {
+          if (!ok) {
             set({ user: null, token: null, isAuthenticated: false });
             return false;
           }
 
-          const user = await response.json();
-          set({ user, isAuthenticated: true });
+          set({ user: data, isAuthenticated: true });
           return true;
         } catch (error) {
           set({ user: null, token: null, isAuthenticated: false });
