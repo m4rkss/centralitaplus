@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { useTenantStore } from '@/stores/useTenantStore';
+import { useTenantStore, useAuthStore } from '@/stores/useTenantStore';
 import { 
   LayoutDashboard, 
   Phone, 
@@ -10,7 +10,8 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
-  X
+  X,
+  Users
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -21,12 +22,17 @@ const navItems = [
   { path: '/incidencias', label: 'Incidencias', icon: AlertTriangle },
   { path: '/comunicados', label: 'Comunicados', icon: Send },
   { path: '/chatbot', label: 'Chatbot', icon: MessageSquare },
+  { path: '/usuarios', label: 'Usuarios', icon: Users, adminOnly: true },
 ];
 
 export function Sidebar({ isOpen = true, onClose, isMobile = false }) {
   const { currentTenant } = useTenantStore();
+  const { user } = useAuthStore();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+
+  // Filter nav items by role
+  const visibleItems = navItems.filter(item => !item.adminOnly || user?.rol === 'admin');
 
   // Don't render if not open on mobile
   if (!isOpen && isMobile) return null;
@@ -86,7 +92,7 @@ export function Sidebar({ isOpen = true, onClose, isMobile = false }) {
 
       {/* Navigation */}
       <nav className="p-3 space-y-1">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.path;
           

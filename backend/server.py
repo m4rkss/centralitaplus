@@ -148,6 +148,18 @@ class ComunicadoCreate(BaseModel):
     mensaje: str
     canal: str = "whatsapp"
 
+class AdminUserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    rol: str = "user"
+    nombre: str = ""
+
+class AdminUserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    rol: Optional[str] = None
+    nombre: Optional[str] = None
+
 class ChatMessage(BaseModel):
     role: str
     content: str
@@ -518,6 +530,107 @@ async def get_current_user_info(auth: Dict = Depends(get_current_user)):
 async def logout():
     """Logout (client-side token removal)"""
     return {"message": "Sesión cerrada correctamente"}
+
+# ============================================================
+# ADMIN: USER MANAGEMENT (Admin only)
+# ============================================================
+
+async def require_admin(auth: Dict = Depends(get_current_user)) -> Dict:
+    if auth["rol"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    return auth
+
+@api_router.get("/admin/users")
+async def list_users(auth: Dict = Depends(require_admin)):
+    """List all users for the admin's tenant"""
+    users = await db.users.find(
+        {"tenant_id": auth["tenant_id"]},
+        {"_id": 0, "password_hash": 0}
+    ).sort("created_at", -1).to_list(200)
+    return {"users": users}
+
+@api_router.post("/admin/users", response_model=UserResponse)
+async def create_user(data: AdminUserCreate, auth: Dict = Depends(require_admin)):
+    """Create a new user in the admin's tenant"""
+    existing = await db.users.find_one({
+        "email": data.email,
+        "tenant_id": auth["tenant_id"]
+    })
+    if existing:
+        raise HTTPException(status_code=409, detail="Ya existe un usuario con ese email")
+
+    if data.rol not in ("admin", "user"):
+        raise HTTPException(status_code=400, detail="Rol inválido. Usa 'admin' o 'user'")
+
+    user = {
+        "id": str(uuid.uuid4()),
+        "email": data.email,
+        "password_hash": hash_password(data.password),
+        "tenant_id": auth["tenant_id"],
+        "rol": data.rol,
+        "nombre": data.nombre,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "last_login": None
+    }
+    await db.users.insert_one(user)
+
+    return UserResponse(
+        id=user["id"],
+        email=user["email"],
+        tenant_id=user["tenant_id"],
+        rol=user["rol"],
+        nombre=user["nombre"]
+    )
+
+@api_router.patch("/admin/users/{user_id}", response_model=UserResponse)
+async def update_user(user_id: str, data: AdminUserUpdate, auth: Dict = Depends(require_admin)):
+    """Update a user in the admin's tenant"""
+    user = await db.users.find_one({"id": user_id, "tenant_id": auth["tenant_id"]})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    updates = {}
+    if data.email is not None:
+        dup = await db.users.find_one({
+            "email": data.email,
+            "tenant_id": auth["tenant_id"],
+            "id": {"$ne": user_id}
+        })
+        if dup:
+            raise HTTPException(status_code=409, detail="Ya existe un usuario con ese email")
+        updates["email"] = data.email
+    if data.password is not None:
+        updates["password_hash"] = hash_password(data.password)
+    if data.rol is not None:
+        if data.rol not in ("admin", "user"):
+            raise HTTPException(status_code=400, detail="Rol inválido")
+        updates["rol"] = data.rol
+    if data.nombre is not None:
+        updates["nombre"] = data.nombre
+
+    if updates:
+        await db.users.update_one({"id": user_id}, {"$set": updates})
+
+    updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    return UserResponse(
+        id=updated["id"],
+        email=updated["email"],
+        tenant_id=updated["tenant_id"],
+        rol=updated["rol"],
+        nombre=updated.get("nombre", "")
+    )
+
+@api_router.delete("/admin/users/{user_id}")
+async def delete_user(user_id: str, auth: Dict = Depends(require_admin)):
+    """Delete a user from the admin's tenant"""
+    if user_id == auth["user_id"]:
+        raise HTTPException(status_code=400, detail="No puedes eliminarte a ti mismo")
+
+    result = await db.users.delete_one({"id": user_id, "tenant_id": auth["tenant_id"]})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    return {"message": "Usuario eliminado correctamente"}
 
 # ============================================================
 # TENANT ENDPOINTS

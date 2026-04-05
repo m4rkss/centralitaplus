@@ -15,6 +15,7 @@ const Incidencias = lazy(() => import("@/pages/Incidencias"));
 const Comunicados = lazy(() => import("@/pages/Comunicados"));
 const Chatbot = lazy(() => import("@/pages/Chatbot"));
 const Configuracion = lazy(() => import("@/pages/Configuracion"));
+const Usuarios = lazy(() => import("@/pages/Usuarios"));
 
 // Loading component
 function PageLoader() {
@@ -53,6 +54,7 @@ function App() {
               <Route path="comunicados" element={<Comunicados />} />
               <Route path="chatbot" element={<Chatbot />} />
               <Route path="configuracion" element={<Configuracion />} />
+              <Route path="usuarios" element={<Usuarios />} />
             </Route>
             
             {/* Catch all - redirect to login */}
