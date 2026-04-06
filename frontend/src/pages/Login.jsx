@@ -54,7 +54,8 @@ export default function Login() {
       navigate(searchParams.get('redirect') || '/');
     }
   }, [isAuthenticated, navigate, searchParams]);
-
+  
+// eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (error) clearError();
     if (localError) setLocalError('');
