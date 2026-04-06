@@ -1,4 +1,4 @@
 [build]
   base    = "frontend"       # carpeta donde está tu package.json
   command = "CI=false npm run build"
-  publish = "frontend/build"           # relativo al base
+  publish = "build"           # relativo al base
