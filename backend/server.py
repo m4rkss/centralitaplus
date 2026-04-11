@@ -20,6 +20,8 @@ import resend
 import secrets
 import httpx
 
+from rls_context import apply_rls_context
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
@@ -312,7 +314,9 @@ async def get_current_user(
     
     token = credentials.credentials
     payload = decode_token(token)
-    
+
+    await apply_rls_context(db, payload)
+
     result = await db.execute(
         select(UserModel).where(UserModel.id == payload["sub"])
     )
@@ -338,13 +342,15 @@ async def get_optional_user(
     try:
         token = credentials.credentials
         payload = decode_token(token)
-        return {
-            "user_id": payload["sub"],
-            "tenant_id": payload["tenant_id"],
-            "rol": payload["rol"]
-        }
-    except:
+    except HTTPException:
         return None
+
+    await apply_rls_context(db, payload)
+    return {
+        "user_id": payload["sub"],
+        "tenant_id": payload["tenant_id"],
+        "rol": payload["rol"]
+    }
 
 # ============================================================
 # SEED DATA
