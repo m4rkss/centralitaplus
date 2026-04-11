@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
+import { API_URL } from '@/config';
 
 // Helper: XHR-based POST that bypasses fetch interception from dev overlay
 function xhrPost(url, body) {
@@ -56,7 +55,7 @@ export const useAuthStore = create(
         set({ isLoading: true, error: null });
         
         try {
-          const { ok, data } = await xhrPost(`${BACKEND_URL}/api/auth/login`, {
+          const { ok, data } = await xhrPost(`${API_URL}/api/auth/login`, {
             email, password, tenant_id: tenantId
           });
 
@@ -102,7 +101,7 @@ export const useAuthStore = create(
         }
 
         try {
-          const { ok, data } = await xhrGet(`${BACKEND_URL}/api/auth/me`, {
+          const { ok, data } = await xhrGet(`${API_URL}/api/auth/me`, {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           });
@@ -177,7 +176,7 @@ export const useTenantStore = create(
         const subdomain = get().getTenantFromURL();
         
         try {
-          const response = await fetch(`${BACKEND_URL}/api/tenant`, {
+          const response = await fetch(`${API_URL}/api/tenant`, {
             headers: { 'X-Tenant-ID': subdomain }
           });
           
@@ -243,7 +242,7 @@ export const useDataStore = create((set, get) => ({
     
     set({ isLoading: true });
     try {
-      const response = await fetch(`${BACKEND_URL}/api/llamadas`, {
+      const response = await fetch(`${API_URL}/api/llamadas`, {
         headers: {
           ...getAuthHeaders(),
           'X-Tenant-ID': subdomain
@@ -268,7 +267,7 @@ export const useDataStore = create((set, get) => ({
     
     set({ isLoading: true });
     try {
-      const response = await fetch(`${BACKEND_URL}/api/incidencias`, {
+      const response = await fetch(`${API_URL}/api/incidencias`, {
         headers: {
           ...getAuthHeaders(),
           'X-Tenant-ID': subdomain
@@ -292,7 +291,7 @@ export const useDataStore = create((set, get) => ({
     const { subdomain } = useTenantStore.getState();
     
     try {
-      const response = await fetch(`${BACKEND_URL}/api/incidencias`, {
+      const response = await fetch(`${API_URL}/api/incidencias`, {
         method: 'POST',
         headers: {
           ...getAuthHeaders(),
@@ -319,7 +318,7 @@ export const useDataStore = create((set, get) => ({
     const { subdomain } = useTenantStore.getState();
     
     try {
-      const response = await fetch(`${BACKEND_URL}/api/incidencias/${id}`, {
+      const response = await fetch(`${API_URL}/api/incidencias/${id}`, {
         method: 'PATCH',
         headers: {
           ...getAuthHeaders(),
@@ -349,7 +348,7 @@ export const useDataStore = create((set, get) => ({
     
     set({ isLoading: true });
     try {
-      const response = await fetch(`${BACKEND_URL}/api/comunicados`, {
+      const response = await fetch(`${API_URL}/api/comunicados`, {
         headers: {
           ...getAuthHeaders(),
           'X-Tenant-ID': subdomain
@@ -373,7 +372,7 @@ export const useDataStore = create((set, get) => ({
     const { subdomain } = useTenantStore.getState();
     
     try {
-      const response = await fetch(`${BACKEND_URL}/api/comunicados`, {
+      const response = await fetch(`${API_URL}/api/comunicados`, {
         method: 'POST',
         headers: {
           ...getAuthHeaders(),
@@ -400,7 +399,7 @@ export const useDataStore = create((set, get) => ({
     const { subdomain } = useTenantStore.getState();
     
     try {
-      const response = await fetch(`${BACKEND_URL}/api/comunicados/enviar`, {
+      const response = await fetch(`${API_URL}/api/comunicados/enviar`, {
         method: 'POST',
         headers: {
           ...getAuthHeaders(),
@@ -442,7 +441,7 @@ export const useDataStore = create((set, get) => ({
     const { subdomain } = useTenantStore.getState();
     
     try {
-      const response = await fetch(`${BACKEND_URL}/api/comunicados/${id}/send`, {
+      const response = await fetch(`${API_URL}/api/comunicados/${id}/send`, {
         method: 'POST',
         headers: {
           ...getAuthHeaders(),
@@ -469,7 +468,7 @@ export const useDataStore = create((set, get) => ({
     const { subdomain } = useTenantStore.getState();
     
     try {
-      const response = await fetch(`${BACKEND_URL}/api/kpis`, {
+      const response = await fetch(`${API_URL}/api/kpis`, {
         headers: {
           ...getAuthHeaders(),
           'X-Tenant-ID': subdomain
@@ -493,7 +492,7 @@ export const useDataStore = create((set, get) => ({
     const { subdomain } = useTenantStore.getState();
     
     try {
-      const response = await fetch(`${BACKEND_URL}/api/llamadas/chart`, {
+      const response = await fetch(`${API_URL}/api/llamadas/chart`, {
         headers: {
           ...getAuthHeaders(),
           'X-Tenant-ID': subdomain

@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore, useTenantStore } from '@/stores/useTenantStore';
+import { API_URL } from '@/config';
 import { Building2, Lock, Mail, Eye, EyeOff, Loader2, AlertCircle, ArrowLeft, KeyRound, CheckCircle2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 // Helper: XHR POST bypasses dev overlay fetch interception
 function xhrPost(url, body) {
@@ -81,7 +80,7 @@ export default function Login() {
     if (!resetEmail) { setResetError('Introduce tu email'); return; }
     setResetLoading(true);
     try {
-      const { ok, data } = await xhrPost(`${BACKEND_URL}/api/auth/password-reset/request`, {
+      const { ok, data } = await xhrPost(`${API_URL}/api/auth/password-reset/request`, {
         email: resetEmail, tenant_id: subdomain
       });
       if (!ok) throw new Error(data.detail || 'Error al enviar');
@@ -100,7 +99,7 @@ export default function Login() {
     if (newPassword.length < 4) { setResetError('La contraseña debe tener al menos 4 caracteres'); return; }
     setResetLoading(true);
     try {
-      const { ok, data } = await xhrPost(`${BACKEND_URL}/api/auth/password-reset/confirm`, {
+      const { ok, data } = await xhrPost(`${API_URL}/api/auth/password-reset/confirm`, {
         token: resetCode, new_password: newPassword
       });
       if (!ok) throw new Error(data.detail || 'Error al restablecer');

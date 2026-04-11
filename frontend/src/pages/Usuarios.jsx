@@ -17,8 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+import { API_URL } from '@/config';
 
 export default function Usuarios() {
   const { user: currentUser, getAuthHeaders } = useAuthStore();
@@ -33,7 +32,7 @@ export default function Usuarios() {
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/admin/users`, {
+      const res = await fetch(`${API_URL}/api/admin/users`, {
         headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }
       });
       if (res.ok) {
@@ -67,8 +66,8 @@ export default function Usuarios() {
     try {
       const isEdit = !!editingUser;
       const url = isEdit
-        ? `${BACKEND_URL}/api/admin/users/${editingUser.id}`
-        : `${BACKEND_URL}/api/admin/users`;
+        ? `${API_URL}/api/admin/users/${editingUser.id}`
+        : `${API_URL}/api/admin/users`;
 
       const body = isEdit
         ? { email: formData.email, nombre: formData.nombre, rol: formData.rol, ...(formData.password ? { password: formData.password } : {}) }
@@ -98,7 +97,7 @@ export default function Usuarios() {
   const handleDelete = async (userId, userName) => {
     if (!window.confirm(`¿Eliminar a ${userName}?`)) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/api/admin/users/${userId}`, {
+      const res = await fetch(`${API_URL}/api/admin/users/${userId}`, {
         method: 'DELETE',
         headers: getAuthHeaders()
       });

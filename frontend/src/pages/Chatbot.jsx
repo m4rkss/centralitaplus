@@ -1,4 +1,5 @@
 import { useTenantStore } from '@/stores/useTenantStore';
+import { API_URL } from '@/config';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   MessageSquare, ExternalLink, FileUp, Send, Bot, User, 
@@ -11,8 +12,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 // Mock responses
 const getMockResponse = (message) => {
@@ -173,7 +172,7 @@ function NativeChat() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/onyx-chat`, {
+      const response = await fetch(`${API_URL}/api/onyx-chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

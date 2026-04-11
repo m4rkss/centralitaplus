@@ -9,8 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import ReactMarkdown from 'react-markdown';
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+import { API_URL } from '@/config';
 
 // Mock responses for Santa Gadea
 const MOCK_RESPONSES = {
@@ -199,7 +198,7 @@ export function ChatDock() {
     setIsLoading(true);
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/onyx-chat`, {
+      const response = await fetch(`${API_URL}/api/onyx-chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
